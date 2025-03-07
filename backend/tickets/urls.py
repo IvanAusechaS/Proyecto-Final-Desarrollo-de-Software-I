@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import TicketListCreate, PuntoAtencionListCreate, BuscarUsuarioPorCedula, CustomTokenObtainPairView, LogoutView, RegisterView
+from .views import TicketListCreate, PuntoAtencionListCreate, BuscarUsuarioPorCedula, CustomTokenObtainPairView, LogoutView, RegisterView, TurnoList
 from rest_framework_simplejwt.views import TokenRefreshView
 
 urlpatterns = [
@@ -10,4 +10,5 @@ urlpatterns = [
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('logout/', LogoutView.as_view(), name='logout'),
     path('registrarse/', RegisterView.as_view(), name='register'),
+    path('turnos/', TurnoList.as_view(), name='turno-list'),
 ]

@@ -1,16 +1,13 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 
-from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
-
 class CustomUserManager(BaseUserManager):
     def create_user(self, cedula, email, nombre, password=None, **extra_fields):
         if not cedula or not email:
             raise ValueError('La cédula y el email son obligatorios')
         email = self.normalize_email(email)
         user = self.model(cedula=cedula, email=email, nombre=nombre, **extra_fields)
-        user.set_password(password)  # Esto asegura que la contraseña se hashee
+        user.set_password(password)
         user.save(using=self._db)
         return user
 
@@ -29,6 +26,7 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     creado = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    es_profesional = models.BooleanField(default=False)  # Nuevo campo para roles
 
     objects = CustomUserManager()
 
@@ -42,6 +40,7 @@ class PuntoAtencion(models.Model):
     nombre = models.CharField(max_length=100)
     ubicacion = models.CharField(max_length=200)
     activo = models.BooleanField(default=True)
+    servicios = models.JSONField(default=list)  # Lista de servicios como JSON
 
     def __str__(self):
         return self.nombre
