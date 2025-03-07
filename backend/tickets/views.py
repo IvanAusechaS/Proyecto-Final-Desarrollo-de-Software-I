@@ -1,8 +1,19 @@
 from rest_framework import generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import Ticket, Usuario, PuntoAtencion
-from .serializers import TicketSerializer, UsuarioSerializer, PuntoAtencionSerializer
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.views import TokenObtainPairView
+from .serializers import CustomTokenObtainPairSerializer, UsuarioSerializer, PuntoAtencionSerializer, TicketSerializer
+from .models import Usuario, PuntoAtencion, Ticket
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        return Response({"message": "Sesión cerrada"}, status=200)
 
 class TicketListCreate(generics.ListCreateAPIView):
     queryset = Ticket.objects.all()

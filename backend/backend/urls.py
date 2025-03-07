@@ -16,10 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from .views import home  # Importa la vista home
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('tickets.urls')),
-    path('', home, name='home'),  # Ruta para la raíz
 ]

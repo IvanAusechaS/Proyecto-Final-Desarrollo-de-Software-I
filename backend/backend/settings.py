@@ -37,11 +37,55 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'tickets',
     'corsheaders',
-    'rest_framework',         # Para la API
-    'tickets',                # Tu app tickets
-    'gestion_usuarios',       # Tu otra app (si existe)
 ]
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+}
+
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'USER_ID_FIELD': 'cedula',  # Usar cédula como identificador único
+    'USER_ID_CLAIM': 'user_id',
+}
+
+AUTH_USER_MODEL = 'tickets.Usuario'
+
+# Logging para depuración
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        '': {
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
+    },
+}
+
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+}
+
+# Usar el modelo personalizado Usuario como AUTH_USER_MODEL
+AUTH_USER_MODEL = 'tickets.Usuario'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
