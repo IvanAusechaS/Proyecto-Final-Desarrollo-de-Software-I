@@ -1,7 +1,7 @@
 from rest_framework import generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer, UsuarioSerializer, PuntoAtencionSerializer, TicketSerializer
 from .models import Usuario, PuntoAtencion, Ticket
@@ -14,6 +14,16 @@ class LogoutView(APIView):
 
     def post(self, request):
         return Response({"message": "Sesión cerrada"}, status=200)
+
+class RegisterView(APIView):
+    permission_classes = [AllowAny]  # Permitir acceso sin autenticación
+
+    def post(self, request):
+        serializer = UsuarioSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "Usuario registrado exitosamente"}, status=201)
+        return Response(serializer.errors, status=400)
 
 class TicketListCreate(generics.ListCreateAPIView):
     queryset = Ticket.objects.all()

@@ -27,7 +27,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         if user.check_password(password):
             logger.info("Contraseña correcta")
-            # Autenticar manualmente y generar tokens
             data = {}
             refresh = self.get_token(user)
             data['refresh'] = str(refresh)
@@ -39,9 +38,28 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise serializers.ValidationError('Contraseña incorrecta')
 
 class UsuarioSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)  # Para que no se devuelva en la respuesta
+
     class Meta:
         model = Usuario
-        fields = ['id', 'cedula', 'email', 'nombre', 'telefono']
+        fields = ['id', 'cedula', 'email', 'nombre', 'telefono', 'password']
+
+    def validate_cedula(self, value):
+        if not value.isdigit():
+            raise serializers.ValidationError('La cédula debe contener solo números.')
+        if len(value) < 6 or len(value) > 20:
+            raise serializers.ValidationError('La cédula debe tener entre 6 y 20 dígitos.')
+        return value
+
+    def create(self, validated_data):
+        user = Usuario.objects.create_user(
+            cedula=validated_data['cedula'],
+            email=validated_data['email'],
+            nombre=validated_data['nombre'],
+            telefono=validated_data.get('telefono', ''),
+            password=validated_data['password']
+        )
+        return user
 
 class PuntoAtencionSerializer(serializers.ModelSerializer):
     class Meta:
