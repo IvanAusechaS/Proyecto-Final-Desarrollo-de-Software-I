@@ -1,88 +1,113 @@
 from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
+from django.utils import timezone
 
-class CustomUserManager(BaseUserManager):
-    def create_user(self, cedula, email, nombre, password=None, **extra_fields):
-        if not cedula or not email:
-            raise ValueError('La cédula y el email son obligatorios')
-        email = self.normalize_email(email)
-        user = self.model(cedula=cedula, email=email, nombre=nombre, **extra_fields)
+class UsuarioManager(BaseUserManager):
+    def create_user(self, cedula, email, nombre, password=None, telefono='', es_profesional=False):
+        if not cedula:
+            raise ValueError('La cédula es obligatoria')
+        if not email:
+            raise ValueError('El email es obligatorio')
+        if not nombre:
+            raise ValueError('El nombre es obligatorio')
+
+        user = self.model(
+            cedula=cedula,
+            email=self.normalize_email(email),
+            nombre=nombre,
+            telefono=telefono,
+            es_profesional=es_profesional,
+        )
         user.set_password(password)
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, cedula, email, nombre, password=None, **extra_fields):
-        extra_fields.setdefault('is_staff', True)
-        extra_fields.setdefault('is_superuser', True)
-        if extra_fields.get('is_staff') is not True or extra_fields.get('is_superuser') is not True:
-            raise ValueError('Superuser debe tener is_staff=True y is_superuser=True')
-        return self.create_user(cedula, email, nombre, password, **extra_fields)
+    def create_superuser(self, cedula, email, nombre, password=None):
+        user = self.create_user(
+            cedula=cedula,
+            email=email,
+            nombre=nombre,
+            password=password,
+            es_profesional=True,
+        )
+        user.is_admin = True
+        user.save(using=self._db)
+        return user
 
-class Usuario(AbstractBaseUser, PermissionsMixin):
+class Usuario(AbstractBaseUser):
     cedula = models.CharField(max_length=20, unique=True)
     email = models.EmailField(unique=True)
-    nombre = models.CharField(max_length=100)
+    nombre = models.CharField(max_length=255)
     telefono = models.CharField(max_length=15, blank=True)
-    creado = models.DateTimeField(auto_now_add=True)
+    es_profesional = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
-    is_staff = models.BooleanField(default=False)
-    es_profesional = models.BooleanField(default=False)  # Nuevo campo para roles
+    is_admin = models.BooleanField(default=False)
 
-    objects = CustomUserManager()
+    objects = UsuarioManager()
 
-    USERNAME_FIELD = 'cedula'
-    REQUIRED_FIELDS = ['email', 'nombre']
+    USERNAME_FIELD = 'cedula'  # Campo usado para login
+    REQUIRED_FIELDS = ['email', 'nombre']  # Campos adicionales para createsuperuser
 
     def __str__(self):
         return self.nombre
+
+    def has_perm(self, perm, obj=None):
+        return self.is_admin
+
+    def has_module_perms(self, app_label):
+        return self.is_admin
+
+    @property
+    def is_staff(self):
+        return self.is_admin
 
 class PuntoAtencion(models.Model):
-    nombre = models.CharField(max_length=100)
-    ubicacion = models.CharField(max_length=200)
+    nombre = models.CharField(max_length=255)
+    ubicacion = models.CharField(max_length=255)
     activo = models.BooleanField(default=True)
-    servicios = models.JSONField(default=list)  # Lista de servicios como JSON
+    servicios = models.JSONField(default=list)
 
     def __str__(self):
         return self.nombre
 
-class Ticket(models.Model):
-    PRIORIDAD_ALTA = 'P'
-    PRIORIDAD_NORMAL = 'N'
-    PRIORIDAD_CHOICES = [
-        (PRIORIDAD_ALTA, 'Alta'),
-        (PRIORIDAD_NORMAL, 'Normal'),
+class Turno(models.Model):
+    ESTADO_CHOICES = [
+        ('En espera', 'En espera'),
+        ('En progreso', 'En progreso'),
+        ('Atendido', 'Atendido'),
+        ('Cancelado', 'Cancelado'),
     ]
+
     TIPO_CITA_CHOICES = [
         ('medica', 'Cita Médica'),
         ('odontologica', 'Cita Odontológica'),
+    ]
+
+    PRIORIDAD_CHOICES = [
+        ('N', 'Normal'),
+        ('P', 'Alta'),
     ]
 
     usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE)
     punto_atencion = models.ForeignKey(PuntoAtencion, on_delete=models.CASCADE)
     numero = models.CharField(max_length=10, unique=True, blank=True)
     tipo_cita = models.CharField(max_length=20, choices=TIPO_CITA_CHOICES)
-    prioridad = models.CharField(max_length=1, choices=PRIORIDAD_CHOICES, default=PRIORIDAD_NORMAL)
+    prioridad = models.CharField(max_length=1, choices=PRIORIDAD_CHOICES, default='N')
     descripcion = models.TextField()
-    estado = models.CharField(max_length=20, default="Pendiente")
-    fecha = models.DateTimeField(auto_now_add=True)
-
-    def save(self, *args, **kwargs):
-        if not self.numero:
-            prefix = self.prioridad
-            last_ticket = Ticket.objects.filter(prioridad=self.prioridad).order_by('-id').first()
-            number = (int(last_ticket.numero.split('-')[1]) + 1) if last_ticket and last_ticket.numero else 1
-            self.numero = f"{prefix}-{number:03d}"
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return self.numero
-
-class Turno(models.Model):
-    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE)
-    punto_atencion = models.ForeignKey(PuntoAtencion, on_delete=models.CASCADE)
-    estado = models.CharField(max_length=20, default="En espera")
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='En espera')
+    fecha = models.DateTimeField(default=timezone.now)
     fecha_asignacion = models.DateTimeField(auto_now_add=True)
     fecha_atencion = models.DateTimeField(null=True, blank=True)
 
+    def save(self, *args, **kwargs):
+        if not self.numero:
+            last_turno = Turno.objects.filter(punto_atencion=self.punto_atencion).order_by('-id').first()
+            if last_turno:
+                last_num = int(last_turno.numero.split('-')[1])
+                self.numero = f"N-{last_num + 1:03d}"
+            else:
+                self.numero = "N-001"
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"Turno {self.ticket.numero} - {self.punto_atencion.nombre}"
+        return f"{self.numero} - {self.usuario.nombre}"

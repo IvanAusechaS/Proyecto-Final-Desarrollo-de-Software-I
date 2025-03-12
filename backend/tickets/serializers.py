@@ -1,41 +1,24 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Usuario, PuntoAtencion, Ticket, Turno
+from .models import Usuario, PuntoAtencion, Turno
 import logging
 
 logger = logging.getLogger(__name__)
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    username_field = 'login_field'
-
     def validate(self, attrs):
-        login_field = attrs.get('login_field')
+        login_field = attrs.get(self.username_field)  # 'cedula'
         password = attrs.get('password')
 
-        logger.info(f"Intentando login con login_field: {login_field}, password: {password}")
+        logger.info(f"Intentando login con cedula: {login_field}")
 
-        user = None
-        try:
-            if '@' in login_field:
-                user = Usuario.objects.get(email=login_field)
-            else:
-                user = Usuario.objects.get(cedula=login_field)
-            logger.info(f"Usuario encontrado: {user}")
-        except Usuario.DoesNotExist:
-            logger.info(f"No se encontró usuario con login_field: {login_field}")
-            raise serializers.ValidationError('Usuario no encontrado')
-
-        if user.check_password(password):
-            logger.info("Contraseña correcta")
-            data = {}
-            refresh = self.get_token(user)
-            data['refresh'] = str(refresh)
-            data['access'] = str(refresh.access_token)
-            data['user'] = {'nombre': user.nombre, 'es_profesional': user.es_profesional}
-            return data
-        else:
-            logger.info("Contraseña incorrecta")
-            raise serializers.ValidationError('Contraseña incorrecta')
+        data = super().validate(attrs)  # Valida usando el sistema de Django
+        data['user'] = {
+            'id': self.user.id,
+            'nombre': self.user.nombre,
+            'es_profesional': self.user.es_profesional
+        }
+        return data
 
 class UsuarioSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
@@ -67,18 +50,29 @@ class PuntoAtencionSerializer(serializers.ModelSerializer):
         model = PuntoAtencion
         fields = ['id', 'nombre', 'ubicacion', 'activo', 'servicios']
 
-class TicketSerializer(serializers.ModelSerializer):
+class TurnoSerializer(serializers.ModelSerializer):
     usuario = UsuarioSerializer(read_only=True)
     punto_atencion = PuntoAtencionSerializer(read_only=True)
-
-    class Meta:
-        model = Ticket
-        fields = ['id', 'usuario', 'punto_atencion', 'numero', 'tipo_cita', 'prioridad', 'descripcion', 'estado', 'fecha']
-
-class TurnoSerializer(serializers.ModelSerializer):
-    ticket = TicketSerializer(read_only=True)
-    punto_atencion = PuntoAtencionSerializer(read_only=True)
+    usuario_id = serializers.PrimaryKeyRelatedField(
+        queryset=Usuario.objects.all(), source='usuario', write_only=True
+    )
+    punto_atencion_id = serializers.PrimaryKeyRelatedField(
+        queryset=PuntoAtencion.objects.all(), source='punto_atencion', write_only=True
+    )
 
     class Meta:
         model = Turno
-        fields = ['id', 'ticket', 'punto_atencion', 'estado', 'fecha_asignacion', 'fecha_atencion']
+        fields = [
+            'id', 'usuario', 'punto_atencion', 'numero', 'tipo_cita', 'prioridad', 
+            'descripcion', 'estado', 'fecha', 'fecha_asignacion', 'fecha_atencion', 
+            'usuario_id', 'punto_atencion_id'
+        ]
+        read_only_fields = ['numero', 'fecha', 'fecha_asignacion']
+
+    def update(self, instance, validated_data):
+        instance.estado = validated_data.get('estado', instance.estado)
+        if instance.estado == 'Atendido' and not instance.fecha_atencion:
+            from django.utils import timezone
+            instance.fecha_atencion = timezone.now()
+        instance.save()
+        return instance

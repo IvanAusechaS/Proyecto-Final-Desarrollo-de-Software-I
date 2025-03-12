@@ -39,8 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
-    'tickets',
-    'corsheaders',
+    'tickets.apps.TicketsConfig',  # Solo esta línea para tickets
 ]
 
 REST_FRAMEWORK = {
