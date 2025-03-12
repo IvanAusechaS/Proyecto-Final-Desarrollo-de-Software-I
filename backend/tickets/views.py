@@ -35,9 +35,14 @@ class PuntoAtencionListCreate(generics.ListCreateAPIView):
     permission_classes = [AllowAny]
 
 class TurnoListCreate(generics.ListCreateAPIView):
-    queryset = Turno.objects.all()
     serializer_class = TurnoSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.es_profesional:
+            return Turno.objects.filter(punto_atencion__profesional=user)
+        return Turno.objects.all()
 
 class TurnoUpdate(generics.UpdateAPIView):
     queryset = Turno.objects.all()

@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 
 class UsuarioManager(BaseUserManager):
     def create_user(self, cedula, email, nombre, password=None, telefono='', es_profesional=False):
@@ -45,8 +46,8 @@ class Usuario(AbstractBaseUser):
 
     objects = UsuarioManager()
 
-    USERNAME_FIELD = 'cedula'  # Campo usado para login
-    REQUIRED_FIELDS = ['email', 'nombre']  # Campos adicionales para createsuperuser
+    USERNAME_FIELD = 'cedula'
+    REQUIRED_FIELDS = ['email', 'nombre']
 
     def __str__(self):
         return self.nombre
@@ -65,7 +66,8 @@ class PuntoAtencion(models.Model):
     nombre = models.CharField(max_length=255)
     ubicacion = models.CharField(max_length=255)
     activo = models.BooleanField(default=True)
-    servicios = models.JSONField(default=list)
+    servicios_texto = models.TextField(blank=True, default="")
+    profesional = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True, limit_choices_to={'es_profesional': True})
 
     def __str__(self):
         return self.nombre
@@ -88,7 +90,7 @@ class Turno(models.Model):
         ('P', 'Alta'),
     ]
 
-    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE)
+    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='turnos')
     punto_atencion = models.ForeignKey(PuntoAtencion, on_delete=models.CASCADE)
     numero = models.CharField(max_length=10, unique=True, blank=True)
     tipo_cita = models.CharField(max_length=20, choices=TIPO_CITA_CHOICES)
@@ -96,17 +98,27 @@ class Turno(models.Model):
     descripcion = models.TextField()
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='En espera')
     fecha = models.DateTimeField(default=timezone.now)
+    fecha_cita = models.DateField()
     fecha_asignacion = models.DateTimeField(auto_now_add=True)
     fecha_atencion = models.DateTimeField(null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if not self.numero:
-            last_turno = Turno.objects.filter(punto_atencion=self.punto_atencion).order_by('-id').first()
-            if last_turno:
+            last_turno = Turno.objects.order_by('-id').first()  # Último turno global
+            if last_turno and last_turno.numero.startswith('N-'):
                 last_num = int(last_turno.numero.split('-')[1])
                 self.numero = f"N-{last_num + 1:03d}"
             else:
                 self.numero = "N-001"
+        
+        if self.punto_atencion.profesional:
+            turnos_del_dia = Turno.objects.filter(
+                punto_atencion__profesional=self.punto_atencion.profesional,
+                fecha_cita=self.fecha_cita
+            ).exclude(id=self.id)
+            if turnos_del_dia.count() >= 4:
+                raise ValidationError(f"El profesional {self.punto_atencion.profesional.nombre} ya tiene 4 turnos el {self.fecha_cita}.")
+        
         super().save(*args, **kwargs)
 
     def __str__(self):

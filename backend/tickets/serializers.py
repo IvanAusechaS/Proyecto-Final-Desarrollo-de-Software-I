@@ -12,7 +12,21 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         logger.info(f"Intentando login con cedula: {login_field}")
 
-        data = super().validate(attrs)  # Valida usando el sistema de Django
+        try:
+            user = Usuario.objects.get(cedula=login_field)
+            logger.info(f"Usuario encontrado: {user.nombre}, Profesional: {user.es_profesional}, Activo: {user.is_active}")
+            if not user.check_password(password):
+                logger.info("Contraseña incorrecta")
+                raise serializers.ValidationError('Contraseña incorrecta')
+            if not user.is_active:
+                logger.info("Usuario inactivo")
+                raise serializers.ValidationError('Usuario inactivo')
+        except Usuario.DoesNotExist:
+            logger.info(f"No se encontró usuario con cedula: {login_field}")
+            raise serializers.ValidationError('Usuario no encontrado')
+
+        data = super().validate(attrs)
+        logger.info(f"Login exitoso para {user.nombre}")
         data['user'] = {
             'id': self.user.id,
             'nombre': self.user.nombre,
@@ -46,9 +60,14 @@ class UsuarioSerializer(serializers.ModelSerializer):
         return user
 
 class PuntoAtencionSerializer(serializers.ModelSerializer):
+    profesional = UsuarioSerializer(read_only=True)
+    profesional_id = serializers.PrimaryKeyRelatedField(
+        queryset=Usuario.objects.filter(es_profesional=True), source='profesional', write_only=True, required=False
+    )
+
     class Meta:
         model = PuntoAtencion
-        fields = ['id', 'nombre', 'ubicacion', 'activo', 'servicios']
+        fields = ['id', 'nombre', 'ubicacion', 'activo', 'servicios_texto', 'profesional', 'profesional_id']
 
 class TurnoSerializer(serializers.ModelSerializer):
     usuario = UsuarioSerializer(read_only=True)
@@ -64,8 +83,8 @@ class TurnoSerializer(serializers.ModelSerializer):
         model = Turno
         fields = [
             'id', 'usuario', 'punto_atencion', 'numero', 'tipo_cita', 'prioridad', 
-            'descripcion', 'estado', 'fecha', 'fecha_asignacion', 'fecha_atencion', 
-            'usuario_id', 'punto_atencion_id'
+            'descripcion', 'estado', 'fecha', 'fecha_cita', 'fecha_asignacion', 
+            'fecha_atencion', 'usuario_id', 'punto_atencion_id'
         ]
         read_only_fields = ['numero', 'fecha', 'fecha_asignacion']
 
