@@ -70,14 +70,10 @@ class PuntoAtencionSerializer(serializers.ModelSerializer):
         fields = ['id', 'nombre', 'ubicacion', 'activo', 'servicios_texto', 'profesional', 'profesional_id']
 
 class TurnoSerializer(serializers.ModelSerializer):
-    usuario = UsuarioSerializer(read_only=True)
-    punto_atencion = PuntoAtencionSerializer(read_only=True)
-    usuario_id = serializers.PrimaryKeyRelatedField(
-        queryset=Usuario.objects.all(), source='usuario', write_only=True
-    )
-    punto_atencion_id = serializers.PrimaryKeyRelatedField(
-        queryset=PuntoAtencion.objects.all(), source='punto_atencion', write_only=True
-    )
+    class Meta:
+        model = Turno
+        fields = ['id', 'numero', 'usuario', 'punto_atencion', 'tipo_cita', 'fecha_cita', 'estado', 'fecha_atencion', 'prioridad', 'descripcion']
+        read_only_fields = ['numero', 'usuario', 'fecha_atencion']
 
     class Meta:
         model = Turno

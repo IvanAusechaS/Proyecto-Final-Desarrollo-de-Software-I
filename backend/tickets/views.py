@@ -80,3 +80,8 @@ class TurnoUpdate(generics.UpdateAPIView):
     serializer_class = TurnoSerializer
     permission_classes = [IsAuthenticated]
     lookup_field = 'id'
+
+class TurnoDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Turno.objects.all()
+    serializer_class = TurnoSerializer
+    lookup_field = 'id'
