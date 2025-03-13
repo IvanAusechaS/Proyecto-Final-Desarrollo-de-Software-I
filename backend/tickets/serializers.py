@@ -1,3 +1,4 @@
+# backend/tickets/serializers.py
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import Usuario, PuntoAtencion, Turno
@@ -60,29 +61,25 @@ class UsuarioSerializer(serializers.ModelSerializer):
         return user
 
 class PuntoAtencionSerializer(serializers.ModelSerializer):
-    profesional = UsuarioSerializer(read_only=True)
-    profesional_id = serializers.PrimaryKeyRelatedField(
-        queryset=Usuario.objects.filter(es_profesional=True), source='profesional', write_only=True, required=False
-    )
+    profesional = serializers.StringRelatedField()
 
     class Meta:
         model = PuntoAtencion
-        fields = ['id', 'nombre', 'ubicacion', 'activo', 'servicios_texto', 'profesional', 'profesional_id']
+        fields = ['id', 'nombre', 'profesional', 'servicios_texto']
 
 class TurnoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Turno
-        fields = ['id', 'numero', 'usuario', 'punto_atencion', 'tipo_cita', 'fecha_cita', 'estado', 'fecha_atencion', 'prioridad', 'descripcion']
-        read_only_fields = ['numero', 'usuario', 'fecha_atencion']
+    usuario = serializers.StringRelatedField(read_only=True)  # Solo lectura para respuestas
+    punto_atencion = serializers.StringRelatedField(read_only=True)  # Solo lectura para respuestas
+    punto_atencion_id = serializers.PrimaryKeyRelatedField(
+        queryset=PuntoAtencion.objects.all(),
+        source='punto_atencion',
+        write_only=True
+    )  # Campo para escritura
 
     class Meta:
         model = Turno
-        fields = [
-            'id', 'usuario', 'punto_atencion', 'numero', 'tipo_cita', 'prioridad', 
-            'descripcion', 'estado', 'fecha', 'fecha_cita', 'fecha_asignacion', 
-            'fecha_atencion', 'usuario_id', 'punto_atencion_id'
-        ]
-        read_only_fields = ['numero', 'fecha', 'fecha_asignacion']
+        fields = ['id', 'numero', 'usuario', 'punto_atencion', 'punto_atencion_id', 'tipo_cita', 'fecha_cita', 'estado', 'fecha_atencion', 'prioridad', 'descripcion']
+        read_only_fields = ['numero', 'usuario', 'fecha_atencion']
 
     def update(self, instance, validated_data):
         instance.estado = validated_data.get('estado', instance.estado)

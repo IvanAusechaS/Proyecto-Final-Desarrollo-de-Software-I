@@ -71,54 +71,33 @@ class PuntoAtencion(models.Model):
 
     def __str__(self):
         return self.nombre
+    
+def validate_turno_time(value):
+    hour = value.hour
+    if not (8 <= hour < 12 or 14 <= hour < 16):
+        raise ValidationError('Los turnos solo pueden ser entre 8:00-12:00 o 14:00-16:00.')
 
 class Turno(models.Model):
-    ESTADO_CHOICES = [
+    ESTADOS = (
         ('En espera', 'En espera'),
         ('En progreso', 'En progreso'),
         ('Atendido', 'Atendido'),
         ('Cancelado', 'Cancelado'),
-    ]
-
-    TIPO_CITA_CHOICES = [
-        ('medica', 'Cita Médica'),
-        ('odontologica', 'Cita Odontológica'),
-    ]
-
-    PRIORIDAD_CHOICES = [
-        ('N', 'Normal'),
-        ('P', 'Alta'),
-    ]
-
-    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='turnos')
-    punto_atencion = models.ForeignKey(PuntoAtencion, on_delete=models.CASCADE)
-    numero = models.CharField(max_length=10, unique=True, blank=True)
-    tipo_cita = models.CharField(max_length=20, choices=TIPO_CITA_CHOICES)
-    prioridad = models.CharField(max_length=1, choices=PRIORIDAD_CHOICES, default='N')
-    descripcion = models.TextField()
-    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='En espera')
-    fecha = models.DateTimeField(default=timezone.now)
-    fecha_cita = models.DateField()
-    fecha_asignacion = models.DateTimeField(auto_now_add=True)
+    )
+    numero = models.CharField(max_length=10, unique=True)
+    usuario = models.ForeignKey('Usuario', on_delete=models.CASCADE)
+    punto_atencion = models.ForeignKey('PuntoAtencion', on_delete=models.CASCADE)
+    tipo_cita = models.CharField(max_length=50)
+    fecha_cita = models.DateTimeField(validators=[validate_turno_time])
+    estado = models.CharField(max_length=20, choices=ESTADOS, default='En espera')
     fecha_atencion = models.DateTimeField(null=True, blank=True)
+    prioridad = models.CharField(max_length=1, choices=[('N', 'Normal'), ('P', 'Alta')])
+    descripcion = models.TextField()
 
     def save(self, *args, **kwargs):
         if not self.numero:
-            last_turno = Turno.objects.order_by('-id').first()  # Último turno global
-            if last_turno and last_turno.numero.startswith('N-'):
-                last_num = int(last_turno.numero.split('-')[1])
-                self.numero = f"N-{last_num + 1:03d}"
-            else:
-                self.numero = "N-001"
-        
-        if self.punto_atencion.profesional:
-            turnos_del_dia = Turno.objects.filter(
-                punto_atencion__profesional=self.punto_atencion.profesional,
-                fecha_cita=self.fecha_cita
-            ).exclude(id=self.id)
-            if turnos_del_dia.count() >= 4:
-                raise ValidationError(f"El profesional {self.punto_atencion.profesional.nombre} ya tiene 4 turnos el {self.fecha_cita}.")
-        
+            last_turno = Turno.objects.order_by('-id').first()
+            self.numero = f'T{int(last_turno.numero[1:]) + 1 if last_turno else 1:06d}'
         super().save(*args, **kwargs)
 
     def __str__(self):

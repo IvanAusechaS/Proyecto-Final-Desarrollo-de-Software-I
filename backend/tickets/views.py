@@ -1,3 +1,4 @@
+# backend/tickets/views.py
 from rest_framework import generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -8,26 +9,35 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer, UsuarioSerializer, PuntoAtencionSerializer, TurnoSerializer
 from django.contrib.auth.hashers import make_password
 from .models import Usuario, PuntoAtencion, Turno
+import logging
+
+logger = logging.getLogger(__name__)
 
 class RegisterView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
+        logger.debug(f"Datos recibidos: {request.data}")
         cedula = request.data.get('cedula')
         nombre = request.data.get('nombre')
         password = request.data.get('password')
 
         if not all([cedula, nombre, password]):
+            logger.error("Faltan campos requeridos")
             return Response({'error': 'Todos los campos son requeridos'}, status=status.HTTP_400_BAD_REQUEST)
 
         if Usuario.objects.filter(cedula=cedula).exists():
+            logger.error(f"Cédula {cedula} ya registrada")
             return Response({'error': 'La cédula ya está registrada'}, status=status.HTTP_400_BAD_REQUEST)
 
         user = Usuario(
             cedula=cedula,
             nombre=nombre,
-            password=make_password(password),  # Hash de la contraseña
-            es_profesional=False  # Por defecto, no es profesional
+            password=make_password(password),
+            es_profesional=False
         )
         user.save()
+        logger.info(f"Usuario {cedula} registrado exitosamente")
 
         refresh = RefreshToken.for_user(user)
         token_data = {
@@ -44,21 +54,18 @@ class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        return Response({"detail": "Logout exitoso"}, status=205)
-
-class RegisterView(generics.CreateAPIView):
-    queryset = Usuario.objects.all()
-    serializer_class = UsuarioSerializer
-    permission_classes = [AllowAny]
+        return Response({"detail": "Logout exitoso"}, status=status.HTTP_205_RESET_CONTENT)
 
 class BuscarUsuarioPorCedula(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, cedula):
         try:
             usuario = Usuario.objects.get(cedula=cedula)
             serializer = UsuarioSerializer(usuario)
             return Response(serializer.data)
         except Usuario.DoesNotExist:
-            return Response({"error": "Usuario no encontrado"}, status=404)
+            return Response({"error": "Usuario no encontrado"}, status=status.HTTP_404_NOT_FOUND)
 
 class PuntoAtencionListCreate(generics.ListCreateAPIView):
     queryset = PuntoAtencion.objects.all()
@@ -73,15 +80,15 @@ class TurnoListCreate(generics.ListCreateAPIView):
         user = self.request.user
         if user.es_profesional:
             return Turno.objects.filter(punto_atencion__profesional=user)
-        return Turno.objects.all()
+        return Turno.objects.filter(usuario=user)
 
-class TurnoUpdate(generics.UpdateAPIView):
-    queryset = Turno.objects.all()
-    serializer_class = TurnoSerializer
-    permission_classes = [IsAuthenticated]
-    lookup_field = 'id'
+    def perform_create(self, serializer):
+        logger.debug(f"Datos recibidos para crear turno: {self.request.data}")
+        serializer.save(usuario=self.request.user)
 
 class TurnoDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Turno.objects.all()
     serializer_class = TurnoSerializer
+    permission_classes = [IsAuthenticated]
     lookup_field = 'id'
+    http_method_names = ['get', 'put', 'patch', 'delete']
