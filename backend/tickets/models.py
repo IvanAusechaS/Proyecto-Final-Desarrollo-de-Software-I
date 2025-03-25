@@ -22,12 +22,13 @@ class UsuarioManager(BaseUserManager):
         return user
 
 class Usuario(AbstractBaseUser):
-    cedula = models.CharField(max_length=20, unique=True)
+    cedula = models.CharField(max_length=20, unique=True)#bigInteger
     nombre = models.CharField(max_length=100)
     email = models.EmailField(unique=True, null=True, blank=True)
     es_profesional = models.BooleanField(default=False)
     password = models.CharField(max_length=128, null=True, blank=True)
-    reset_password_token = models.CharField(max_length=32, null=True, blank=True)
+    reset_password_token = models.CharField(max_length=32, null=True, blank=True)#no es necesario con el Firebase. Incluso devuelve la foto de google, correo, nombre.
+    #Se puede generar el token en memoria, con es vigencia si la persona no restablece contraseña se
     
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
