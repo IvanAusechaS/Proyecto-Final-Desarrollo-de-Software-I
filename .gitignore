@@ -24,6 +24,7 @@
 # Backend
 /backend/venv/
 /backend/__pycache__/
+/backend/tickets/__pycache__/
 /backend/*.pyc
 /backend/*.pyo
 /backend/*.pyd
