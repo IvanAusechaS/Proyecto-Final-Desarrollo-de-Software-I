@@ -1,4 +1,5 @@
 # backend/tickets/views.py
+
 from decouple import config
 from django.core.mail import send_mail
 from django.conf import settings
@@ -7,10 +8,6 @@ from django.contrib.auth.admin import UserAdmin
 import firebase_admin
 from rest_framework import viewsets
 from firebase_admin import auth, credentials
-from rest_framework import generics
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -92,14 +89,15 @@ class RegisterView(APIView):
         if Usuario.objects.filter(cedula=cedula).exists():
             logger.error(f"Cédula {cedula} ya registrada")
             return Response({'error': 'La cédula ya está registrada'}, status=status.HTTP_400_BAD_REQUEST)
+
         if Usuario.objects.filter(email=email).exists():
             logger.error(f"Email {email} ya registrado")
             return Response({'error': 'El correo ya está registrado'}, status=status.HTTP_400_BAD_REQUEST)
-
         user = Usuario(
             cedula=cedula,
             nombre=nombre,
             email=email,
+
             password=make_password(password),
             es_profesional=False
         )

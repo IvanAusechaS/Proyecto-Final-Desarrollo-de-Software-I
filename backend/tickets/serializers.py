@@ -83,6 +83,7 @@ class TurnoSerializer(serializers.ModelSerializer):
     )
     tipo_cita = serializers.CharField(required=False)  # No requerido en actualizaciones
 
+
     class Meta:
         model = Turno
         fields = ['id', 'numero', 'usuario', 'punto_atencion', 'punto_atencion_id', 'tipo_cita', 'fecha_cita', 'estado', 'fecha_atencion', 'prioridad', 'descripcion']
