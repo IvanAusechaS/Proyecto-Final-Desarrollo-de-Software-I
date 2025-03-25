@@ -98,6 +98,8 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'sitema.atenciondsi@gmail.com'
 EMAIL_HOST_PASSWORD = 'szad gspw mhit eklj'  # Cambia si usas contraseña de app
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+#Estas credenciales van en el .env Tanto credenciales y bases de datos
+#Django enviroment
 
 # Configuración de REST Framework y JWT (si lo usas)
 REST_FRAMEWORK = {

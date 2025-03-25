@@ -1,5 +1,4 @@
 # backend/tickets/views.py
-
 from decouple import config
 from django.core.mail import send_mail
 from django.conf import settings
@@ -8,6 +7,10 @@ from django.contrib.auth.admin import UserAdmin
 import firebase_admin
 from rest_framework import viewsets
 from firebase_admin import auth, credentials
+from rest_framework import generics
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -21,9 +24,9 @@ import datetime
 
 logger = logging.getLogger(__name__)
 
-if not firebase_admin._apps:
-    cred = credentials.Certificate(config('FIREBASE_CREDENTIALS'))
-    firebase_admin.initialize_app(cred)
+import os
+cred_path = os.path.join(os.path.dirname(__file__), '..', config('FIREBASE_CREDENTIALS'))
+cred = credentials.Certificate(cred_path)
 
 # Inicializar Firebase Admin SDK (solo una vez)
 if not firebase_admin._apps:
@@ -89,15 +92,14 @@ class RegisterView(APIView):
         if Usuario.objects.filter(cedula=cedula).exists():
             logger.error(f"Cédula {cedula} ya registrada")
             return Response({'error': 'La cédula ya está registrada'}, status=status.HTTP_400_BAD_REQUEST)
-
         if Usuario.objects.filter(email=email).exists():
             logger.error(f"Email {email} ya registrado")
             return Response({'error': 'El correo ya está registrado'}, status=status.HTTP_400_BAD_REQUEST)
+
         user = Usuario(
             cedula=cedula,
             nombre=nombre,
             email=email,
-
             password=make_password(password),
             es_profesional=False
         )
