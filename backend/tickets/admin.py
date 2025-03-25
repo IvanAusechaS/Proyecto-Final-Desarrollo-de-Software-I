@@ -1,22 +1,30 @@
+# backend/tickets/admin.py
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin
 from .models import Usuario, PuntoAtencion, Turno
-from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-class UsuarioAdmin(BaseUserAdmin):
-    list_display = ('cedula', 'nombre', 'email', 'es_profesional', 'is_active', 'is_admin')
-    list_filter = ('es_profesional', 'is_active', 'is_admin')
+class UsuarioAdmin(UserAdmin):
+    # Campos que se muestran en la lista de usuarios
+    list_display = ('cedula', 'nombre', 'email', 'es_profesional', 'is_admin', 'is_active')
+    list_filter = ('es_profesional', 'is_admin', 'is_active')
+    search_fields = ('cedula', 'nombre', 'email')
+
+    # Campos en el formulario de edición
     fieldsets = (
         (None, {'fields': ('cedula', 'password')}),
-        ('Información Personal', {'fields': ('nombre', 'email', 'telefono')}),
-        ('Permisos', {'fields': ('es_profesional', 'is_active', 'is_admin')}),
+        ('Información personal', {'fields': ('nombre', 'email')}),
+        ('Permisos', {'fields': ('es_profesional', 'is_admin', 'is_staff', 'is_superuser')}),
+        ('Estado', {'fields': ('is_active',)}),
+        ('Restablecimiento', {'fields': ('reset_password_token',)}),
     )
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
-            'fields': ('cedula', 'email', 'nombre', 'telefono', 'password1', 'password2', 'es_profesional', 'is_active', 'is_admin'),
+            'fields': ('cedula', 'nombre', 'email', 'password1', 'password2', 'es_profesional', 'is_admin', 'is_active'),
         }),
     )
-    search_fields = ('cedula', 'nombre', 'email')
+
+    # Configuración específica para el modelo personalizado
     ordering = ('cedula',)
     filter_horizontal = ()
 

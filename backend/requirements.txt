@@ -1,6 +1,6 @@
-Django==4.2
-djangorestframework==3.14.0
-djangorestframework-simplejwt==5.3.1
-psycopg2-binary==2.9.9
-gunicorn==22.0.0
-requests==2.32.3
+requests
+djangorestframework-simplejwt
+firebase-admin
+python-decouple
+django
+djangorestframework

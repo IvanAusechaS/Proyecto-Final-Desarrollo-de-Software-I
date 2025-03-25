@@ -1,66 +1,52 @@
+# backend/tickets/models.py
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 
 class UsuarioManager(BaseUserManager):
-    def create_user(self, cedula, email, nombre, password=None, telefono='', es_profesional=False):
+    def create_user(self, cedula, nombre, email, password=None):
         if not cedula:
             raise ValueError('La cédula es obligatoria')
-        if not email:
-            raise ValueError('El email es obligatorio')
-        if not nombre:
-            raise ValueError('El nombre es obligatorio')
-
-        user = self.model(
-            cedula=cedula,
-            email=self.normalize_email(email),
-            nombre=nombre,
-            telefono=telefono,
-            es_profesional=es_profesional,
-        )
+        user = self.model(cedula=cedula, nombre=nombre, email=email)
         user.set_password(password)
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, cedula, email, nombre, password=None):
-        user = self.create_user(
-            cedula=cedula,
-            email=email,
-            nombre=nombre,
-            password=password,
-            es_profesional=True,
-        )
+    def create_superuser(self, cedula, nombre, email, password=None):
+        user = self.create_user(cedula, nombre, email, password)
         user.is_admin = True
+        user.is_staff = True
+        user.is_superuser = True
         user.save(using=self._db)
         return user
 
 class Usuario(AbstractBaseUser):
     cedula = models.CharField(max_length=20, unique=True)
-    email = models.EmailField(unique=True)
-    nombre = models.CharField(max_length=255)
-    telefono = models.CharField(max_length=15, blank=True)
+    nombre = models.CharField(max_length=100)
+    email = models.EmailField(unique=True, null=True, blank=True)
     es_profesional = models.BooleanField(default=False)
+    password = models.CharField(max_length=128, null=True, blank=True)
+    reset_password_token = models.CharField(max_length=32, null=True, blank=True)
+    
     is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
     is_admin = models.BooleanField(default=False)
+    is_superuser = models.BooleanField(default=False)
 
     objects = UsuarioManager()
 
     USERNAME_FIELD = 'cedula'
-    REQUIRED_FIELDS = ['email', 'nombre']
+    REQUIRED_FIELDS = ['nombre', 'email']
 
     def __str__(self):
-        return self.nombre
+        return self.cedula
 
     def has_perm(self, perm, obj=None):
-        return self.is_admin
+        return self.is_admin or self.is_superuser
 
     def has_module_perms(self, app_label):
-        return self.is_admin
-
-    @property
-    def is_staff(self):
-        return self.is_admin
+        return self.is_admin or self.is_superuser
 
 class PuntoAtencion(models.Model):
     nombre = models.CharField(max_length=255)
@@ -84,21 +70,15 @@ class Turno(models.Model):
         ('Atendido', 'Atendido'),
         ('Cancelado', 'Cancelado'),
     )
-    numero = models.CharField(max_length=10, unique=True)
+    numero = models.CharField(max_length=14, unique=True)
     usuario = models.ForeignKey('Usuario', on_delete=models.CASCADE)
     punto_atencion = models.ForeignKey('PuntoAtencion', on_delete=models.CASCADE)
     tipo_cita = models.CharField(max_length=50)
-    fecha_cita = models.DateTimeField(validators=[validate_turno_time])
+    fecha_cita = models.DateTimeField()  # Quitamos el validador
     estado = models.CharField(max_length=20, choices=ESTADOS, default='En espera')
     fecha_atencion = models.DateTimeField(null=True, blank=True)
-    prioridad = models.CharField(max_length=1, choices=[('N', 'Normal'), ('P', 'Alta')])
-    descripcion = models.TextField()
-
-    def save(self, *args, **kwargs):
-        if not self.numero:
-            last_turno = Turno.objects.order_by('-id').first()
-            self.numero = f'T{int(last_turno.numero[1:]) + 1 if last_turno else 1:06d}'
-        super().save(*args, **kwargs)
+    prioridad = models.CharField(max_length=1, choices=[('N', 'Normal'), ('P', 'Alta')], default='N')
+    descripcion = models.TextField(blank=True, null=True)
 
     def __str__(self):
         return f"{self.numero} - {self.usuario.nombre}"
