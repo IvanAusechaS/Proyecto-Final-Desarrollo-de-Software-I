@@ -1,35 +1,43 @@
-# backend/tickets/models.py
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 
 class UsuarioManager(BaseUserManager):
-    def create_user(self, cedula, nombre, email, password=None):
-        if not cedula:
-            raise ValueError('La cédula es obligatoria')
-        user = self.model(cedula=cedula, nombre=nombre, email=email)
+    def create_user(self, email, nombre, password=None, cedula=None, es_profesional=False, **extra_fields):
+        if not email:
+            raise ValueError('El correo electrónico es obligatorio')
+        email = self.normalize_email(email)
+        user = self.model(
+            email=email,
+            nombre=nombre,
+            cedula=cedula,
+            es_profesional=es_profesional,
+            **extra_fields
+        )
         user.set_password(password)
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, cedula, nombre, email, password=None):
-        user = self.create_user(cedula, nombre, email, password)
-        user.is_admin = True
-        user.is_staff = True
-        user.is_superuser = True
-        user.save(using=self._db)
-        return user
+    def create_superuser(self, email, nombre, password=None, cedula=None, es_profesional=False, **extra_fields):
+        extra_fields.setdefault('is_admin', True)
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+
+        if extra_fields.get('is_admin') is not True:
+            raise ValueError('Superuser debe tener is_admin=True.')
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('Superuser debe tener is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('Superuser debe tener is_superuser=True.')
+
+        return self.create_user(email, nombre, password, cedula, es_profesional, **extra_fields)
 
 class Usuario(AbstractBaseUser):
-    cedula = models.CharField(max_length=20, unique=True)#bigInteger
+    email = models.EmailField(unique=True)
     nombre = models.CharField(max_length=100)
-    email = models.EmailField(unique=True, null=True, blank=True)
+    cedula = models.CharField(max_length=20, unique=True, null=True, blank=True)
     es_profesional = models.BooleanField(default=False)
-    password = models.CharField(max_length=128, null=True, blank=True)
-    reset_password_token = models.CharField(max_length=32, null=True, blank=True)#no es necesario con el Firebase. Incluso devuelve la foto de google, correo, nombre.
-    #Se puede generar el token en memoria, con es vigencia si la persona no restablece contraseña se
-    
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_admin = models.BooleanField(default=False)
@@ -37,11 +45,11 @@ class Usuario(AbstractBaseUser):
 
     objects = UsuarioManager()
 
-    USERNAME_FIELD = 'cedula'
-    REQUIRED_FIELDS = ['nombre', 'email']
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['nombre']
 
     def __str__(self):
-        return self.cedula
+        return self.email
 
     def has_perm(self, perm, obj=None):
         return self.is_admin or self.is_superuser
@@ -58,29 +66,54 @@ class PuntoAtencion(models.Model):
 
     def __str__(self):
         return self.nombre
-    
+
 def validate_turno_time(value):
     hour = value.hour
     if not (8 <= hour < 12 or 14 <= hour < 16):
         raise ValidationError('Los turnos solo pueden ser entre 8:00-12:00 o 14:00-16:00.')
 
 class Turno(models.Model):
-    ESTADOS = (
+    ESTADO_CHOICES = [
         ('En espera', 'En espera'),
         ('En progreso', 'En progreso'),
         ('Atendido', 'Atendido'),
         ('Cancelado', 'Cancelado'),
-    )
-    numero = models.CharField(max_length=14, unique=True)
+    ]
+    PRIORIDAD_CHOICES = [
+        ('N', 'Normal'),
+        ('P', 'Prioritario'),
+    ]
+
+    numero = models.CharField(max_length=4, unique=False)  # Ej: N001
     usuario = models.ForeignKey('Usuario', on_delete=models.CASCADE)
     punto_atencion = models.ForeignKey('PuntoAtencion', on_delete=models.CASCADE)
     tipo_cita = models.CharField(max_length=50)
-    fecha_cita = models.DateTimeField()  # Quitamos el validador
-    estado = models.CharField(max_length=20, choices=ESTADOS, default='En espera')
+    fecha = models.DateField(default=timezone.now)  # Nuevo campo para la fecha
+    fecha_cita = models.DateTimeField(default=timezone.now)  # Mantiene la hora exacta
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='En espera')
+    prioridad = models.CharField(max_length=1, choices=PRIORIDAD_CHOICES, default='N')
     fecha_atencion = models.DateTimeField(null=True, blank=True)
-    prioridad = models.CharField(max_length=1, choices=[('N', 'Normal'), ('P', 'Alta')], default='N')
-    descripcion = models.TextField(blank=True, null=True)
+    descripcion = models.TextField(null=True, blank=True)
 
+    class Meta:
+        unique_together = ('punto_atencion', 'numero', 'fecha')  # Unicidad por día y punto
+
+    def save(self, *args, **kwargs):
+        if not self.numero:
+            today = timezone.now().date()
+            last_turno = Turno.objects.filter(
+                punto_atencion=self.punto_atencion,
+                fecha=today
+            ).order_by('numero').last()
+            if last_turno and last_turno.numero.startswith('N'):
+                last_num = int(last_turno.numero[1:])  # Extrae el número después de 'N'
+                new_num = last_num + 1
+            else:
+                new_num = 1
+            self.numero = f"N{new_num:03d}"  # Ej: N001
+        if not self.fecha:  # Asegura que fecha se setee
+            self.fecha = self.fecha_cita.date()
+        super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.numero} - {self.usuario.nombre}"
+        return f"{self.numero} - {self.punto_atencion.nombre}"

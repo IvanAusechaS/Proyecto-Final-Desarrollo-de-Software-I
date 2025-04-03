@@ -58,7 +58,7 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'sistema_atencion',
+        'NAME': 'sistema_atencion_dsi',
         'USER': 'postgres',
         'PASSWORD': 'KiaraMia77@',
         'HOST': 'localhost',
@@ -101,11 +101,14 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 #Estas credenciales van en el .env Tanto credenciales y bases de datos
 #Django enviroment
 
-# Configuración de REST Framework y JWT (si lo usas)
+# Configuración de REST Framework y JWT
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
+    'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ],
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
 }
 
 SIMPLE_JWT = {

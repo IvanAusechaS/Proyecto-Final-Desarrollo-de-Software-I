@@ -1,274 +1,175 @@
-# backend/tickets/views.py
-from decouple import config
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils.crypto import get_random_string
-from django.contrib.auth.admin import UserAdmin
-import firebase_admin
-from rest_framework import viewsets
-from firebase_admin import auth, credentials
-from rest_framework import generics
+from django.contrib.auth.hashers import make_password
+from rest_framework import generics, viewsets
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer, UsuarioSerializer, PuntoAtencionSerializer, TurnoSerializer
-from django.contrib.auth.hashers import make_password
 from .models import Usuario, PuntoAtencion, Turno
 import logging
 from django.utils import timezone
-import datetime
 
 logger = logging.getLogger(__name__)
 
-import os
-cred_path = os.path.join(os.path.dirname(__file__), '..', config('FIREBASE_CREDENTIALS'))
-cred = credentials.Certificate(cred_path)
-
-# Inicializar Firebase Admin SDK (solo una vez)
-if not firebase_admin._apps:
-    cred = credentials.Certificate('C:/Users/ivana/.vscode/Proyecto DSI/backend/credentials/sistema-atencion-dsi-firebase-adminsdk-fbsvc-d425066aa4.json')
-    firebase_admin.initialize_app(cred)
-
-class FirebaseLoginView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        id_token = request.data.get('id_token')
-        if not id_token:
-            return Response({'error': 'Token de Firebase requerido'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            decoded_token = auth.verify_id_token(id_token)
-            email = decoded_token['email']
-            name = decoded_token.get('name', 'Usuario Google')
-        except Exception as e:
-            logger.error(f"Error verificando token de Firebase: {str(e)}")
-            return Response({'error': 'Token inválido'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            user = Usuario.objects.get(email=email)
-            needs_cedula = not user.cedula or user.cedula == email.split('@')[0]
-        except Usuario.DoesNotExist:
-            user = Usuario.objects.create_user(
-                cedula=email.split('@')[0],
-                email=email,
-                nombre=name,
-                password=None,
-            )
-            needs_cedula = True
-
-        refresh = RefreshToken.for_user(user)
-        return Response({
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-            'user': {
-                'id': user.id,
-                'nombre': user.nombre,
-                'cedula': user.cedula,
-                'email': user.email,
-                'es_profesional': user.es_profesional,
-                'needs_cedula': needs_cedula
-            }
-        }, status=status.HTTP_200_OK)
-
-class RegisterView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        logger.debug(f"Datos recibidos: {request.data}")
-        cedula = request.data.get('cedula')
-        nombre = request.data.get('nombre')
-        email = request.data.get('email')
-        password = request.data.get('password')
-
-        if not all([cedula, nombre, email, password]):
-            logger.error("Faltan campos requeridos")
-            return Response({'error': 'Todos los campos son requeridos'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if Usuario.objects.filter(cedula=cedula).exists():
-            logger.error(f"Cédula {cedula} ya registrada")
-            return Response({'error': 'La cédula ya está registrada'}, status=status.HTTP_400_BAD_REQUEST)
-        if Usuario.objects.filter(email=email).exists():
-            logger.error(f"Email {email} ya registrado")
-            return Response({'error': 'El correo ya está registrado'}, status=status.HTTP_400_BAD_REQUEST)
-
-        user = Usuario(
-            cedula=cedula,
-            nombre=nombre,
-            email=email,
-            password=make_password(password),
-            es_profesional=False
-        )
-        user.save()
-        logger.info(f"Usuario {cedula} registrado exitosamente")
-
-        refresh = RefreshToken.for_user(user)
-        token_data = {
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-            'user': {
-                'id': user.id,
-                'cedula': user.cedula,
-                'email': user.email,
-                'nombre': user.nombre,
-                'es_profesional': user.es_profesional
-            }
-        }
-        return Response(token_data, status=status.HTTP_201_CREATED)
-
-class ResetPasswordView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        email = request.data.get('email')
-        if not email:
-            return Response({'error': 'Correo electrónico requerido'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            user = Usuario.objects.get(email=email)
-        except Usuario.DoesNotExist:
-            return Response({'error': 'No existe un usuario con este correo'}, status=status.HTTP_400_BAD_REQUEST)
-
-        token = get_random_string(length=32)
-        user.reset_password_token = token
-        user.save()
-
-        reset_link = f"http://localhost:3000/reset-password-confirm?token={token}"
-        subject = 'Restablecer tu contraseña'
-        message = f'Hola {user.nombre},\n\nHaz clic en este enlace para restablecer tu contraseña: {reset_link}\n\nEste enlace es válido por 1 hora.'
-        from_email = settings.EMAIL_HOST_USER
-        recipient_list = [email]
-
-        try:
-            send_mail(subject, message, from_email, recipient_list, fail_silently=False)
-            logger.info(f"Correo de restablecimiento enviado a {email}")
-            return Response({'message': 'Se ha enviado un correo para restablecer tu contraseña'}, status=status.HTTP_200_OK)
-        except Exception as e:
-            logger.error(f"Error al enviar correo: {str(e)}")
-            return Response({'error': 'Error al enviar el correo de restablecimiento'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class ResetPasswordConfirmView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        token = request.data.get('token')
-        new_password = request.data.get('new_password')
-
-        if not token or not new_password:
-            return Response({'error': 'Token y nueva contraseña son requeridos'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            user = Usuario.objects.get(reset_password_token=token)
-        except Usuario.DoesNotExist:
-            return Response({'error': 'Token inválido o expirado'}, status=status.HTTP_400_BAD_REQUEST)
-
-        user.set_password(new_password)
-        user.reset_password_token = None
-        user.save()
-
-        return Response({'message': 'Contraseña actualizada correctamente'}, status=status.HTTP_200_OK)
-
+# Login con email y JWT
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+    permission_classes = [AllowAny]
 
-class LogoutView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        return Response({"detail": "Logout exitoso"}, status=status.HTTP_205_RESET_CONTENT)
-
-class BuscarUsuarioPorCedula(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, cedula):
-        try:
-            usuario = Usuario.objects.get(cedula=cedula)
-            serializer = UsuarioSerializer(usuario)
-            return Response(serializer.data)
-        except Usuario.DoesNotExist:
-            return Response({"error": "Usuario no encontrado"}, status=status.HTTP_404_NOT_FOUND)
-
-class CurrentTurnosView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        today = timezone.now().date()
-        melendez = Turno.objects.filter(
-            punto_atencion_id=1,
-            fecha_cita__date=today,
-            estado='En espera'
-        ).order_by('numero').first()
-        polvorines = Turno.objects.filter(
-            punto_atencion_id=2,
-            fecha_cita__date=today,
-            estado='En espera'
-        ).order_by('numero').first()
-
-        melendez_count = Turno.objects.filter(
-            punto_atencion_id=1,
-            fecha_cita__date=today,
-            estado='En espera'
-        ).count()
-        polvorines_count = Turno.objects.filter(
-            punto_atencion_id=2,
-            fecha_cita__date=today,
-            estado='En espera'
-        ).count()
-
+# Registro de usuarios con email
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_view(request):
+    logger.debug(f"Datos recibidos: {request.data}")
+    serializer = UsuarioSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.save()
+        logger.info(f"Usuario {user.email} registrado exitosamente")
+        refresh = RefreshToken.for_user(user)
         return Response({
-            'melendez': melendez.numero if melendez else 'Ninguno',
-            'polvorines': polvorines.numero if polvorines else 'Ninguno',
-            'melendezTime': melendez_count * 10,
-            'polvorinesTime': polvorines_count * 10,
-        })
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'nombre': user.nombre,
+                'cedula': user.cedula,
+                'es_profesional': user.es_profesional
+            }
+        }, status=201)
+    logger.error(f"Errores de validación: {serializer.errors}")
+    return Response({'error': serializer.errors}, status=400)
 
+# Logout
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def logout_view(request):
+    return Response({"detail": "Logout exitoso"}, status=status.HTTP_205_RESET_CONTENT)
+
+# Restablecer contraseña
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password_view(request):
+    email = request.data.get('email')
+    if not email:
+        return Response({'error': 'Correo electrónico requerido'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = Usuario.objects.get(email=email)
+    except Usuario.DoesNotExist:
+        return Response({'error': 'No existe un usuario con este correo'}, status=status.HTTP_400_BAD_REQUEST)
+
+    token = get_random_string(length=32)
+    # Aquí podrías usar un campo temporal en memoria o un modelo separado, pero por simplicidad usamos email
+    reset_link = f"http://localhost:3000/reset-password-confirm?token={token}"
+    subject = 'Restablecer tu contraseña'
+    message = f'Hola {user.nombre},\n\nHaz clic en este enlace para restablecer tu contraseña: {reset_link}\n\nVálido por 1 hora.'
+    from_email = settings.EMAIL_HOST_USER
+    recipient_list = [email]
+
+    try:
+        send_mail(subject, message, from_email, recipient_list, fail_silently=False)
+        logger.info(f"Correo de restablecimiento enviado a {email}")
+        # Guardar token temporalmente (puedes usar un modelo ResetToken si prefieres)
+        user.reset_password_token = token  # Añadir este campo al modelo si decides usarlo
+        user.save()
+        return Response({'message': 'Se ha enviado un correo para restablecer tu contraseña'}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Error al enviar correo: {str(e)}")
+        return Response({'error': 'Error al enviar el correo de restablecimiento'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# Confirmar restablecimiento de contraseña
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password_confirm_view(request):
+    token = request.data.get('token')
+    new_password = request.data.get('new_password')
+
+    if not token or not new_password:
+        return Response({'error': 'Token y nueva contraseña son requeridos'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = Usuario.objects.get(reset_password_token=token)
+    except Usuario.DoesNotExist:
+        return Response({'error': 'Token inválido o expirado'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user.set_password(new_password)
+    user.reset_password_token = None
+    user.save()
+    return Response({'message': 'Contraseña actualizada correctamente'}, status=status.HTTP_200_OK)
+
+# Buscar usuario por cédula (opcional)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def buscar_usuario_por_cedula(request, cedula):
+    try:
+        usuario = Usuario.objects.get(cedula=cedula)
+        serializer = UsuarioSerializer(usuario)
+        return Response(serializer.data)
+    except Usuario.DoesNotExist:
+        return Response({"error": "Usuario no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+
+# Turnos actuales
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def current_turnos_view(request):
+    current_time = timezone.now()
+    today = current_time.date()
+    turnos_en_progreso = Turno.objects.filter(
+        estado='En progreso',
+        fecha=today  # Usamos el nuevo campo fecha
+    ).order_by('prioridad', 'fecha_cita')  # Prioridad 'P' antes que 'N'
+
+    current_turnos = {}
+    estimated_times = {}
+    for punto in PuntoAtencion.objects.all():
+        turno = turnos_en_progreso.filter(punto_atencion=punto).first()
+        current_turnos[punto.id] = turno.numero if turno else 'Ninguno'
+        turnos_espera = Turno.objects.filter(
+            punto_atencion=punto,
+            estado='En espera',
+            fecha=today
+        ).order_by('prioridad', 'fecha_cita').count()
+        estimated_times[punto.id] = turnos_espera * 15
+
+    return Response({
+        'current_turnos': current_turnos,
+        'estimated_times': estimated_times
+    })
+
+# Listar y crear turnos
 class TurnoListCreate(generics.ListCreateAPIView):
     queryset = Turno.objects.all()
     serializer_class = TurnoSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        user = self.request.user
-        if not user.is_active:
-            return Turno.objects.none()
-        if user.is_admin or user.is_superuser:
-            return Turno.objects.all()
-        elif user.es_profesional:
-            return Turno.objects.filter(punto_atencion__profesional=user)
-        return Turno.objects.filter(usuario=user)
+        return Turno.objects.filter(usuario=self.request.user)
 
     def perform_create(self, serializer):
-        user = self.request.user
-        if not user.is_active:
-            raise ValidationError("Usuario inactivo no puede crear turnos")
-        punto_atencion = serializer.validated_data['punto_atencion']
-        if not punto_atencion.activo:
-            raise ValidationError("El punto de atención no está activo")
-        if user.es_profesional and punto_atencion.profesional != user:
-            raise ValidationError("Solo puedes crear turnos en tu punto de atención")
+        serializer.save(usuario=self.request.user)
 
-        today = timezone.now()
-        date_str = today.strftime('%d%m%y')  # Ej. 240325
-        prefix = f"T{str(punto_atencion.id).zfill(2)}{date_str}"  # Ej. T01240325 (9 caracteres)
-        
-        last_turno = Turno.objects.filter(
-            punto_atencion=punto_atencion,
-            fecha_cita__date=today.date(),
-            numero__startswith=prefix
-        ).order_by('numero').last()
-        
-        if last_turno:
-            last_num = int(last_turno.numero[9:])  # Extrae los últimos 4 dígitos después de T01DDMMYY
-            new_num = last_num + 1
-        else:
-            new_num = 1
-        numero = f"{prefix}{new_num:04d}"  # Ej. T012403250001 (13 caracteres)
-        
-        serializer.save(usuario=user, fecha_cita=today, numero=numero)
+class ProfesionalTurnosList(generics.ListAPIView):
+    serializer_class = TurnoSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user.es_profesional:
+            return Turno.objects.none()  # No turnos si no es profesional
+        today = timezone.now().date()
+        # Filtra turnos del punto de atención del profesional para el día actual
+        return Turno.objects.filter(
+            punto_atencion__profesional=user,
+            fecha=today
+        ).order_by('prioridad', 'fecha_cita')  # Prioridad 'P' primero
 
 class TurnoDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Turno.objects.all()
@@ -277,27 +178,11 @@ class TurnoDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        if not user.is_active:
+        if not user.es_profesional:
             return Turno.objects.none()
-        if user.is_admin or user.is_superuser:
-            return Turno.objects.all()
-        elif user.es_profesional:
-            return Turno.objects.filter(punto_atencion__profesional=user)
-        return Turno.objects.filter(usuario=user)
+        return Turno.objects.filter(punto_atencion__profesional=user)
 
-    def perform_update(self, serializer):
-        user = self.request.user
-        turno = self.get_object()
-        if user.es_profesional and turno.punto_atencion.profesional != user:
-            raise ValidationError("No tienes permiso para modificar este turno")
-        if not user.is_admin and not user.es_profesional and turno.usuario != user:
-            raise ValidationError("No puedes modificar turnos de otros usuarios")
-
-        new_estado = self.request.data.get('estado')
-        if new_estado == 'Cancelado' and turno.fecha_cita <= timezone.now():
-            raise ValidationError("No puedes cancelar turnos pasados")
-        serializer.save()
-
+# Listar y crear puntos de atención
 class PuntoAtencionListCreate(generics.ListCreateAPIView):
     queryset = PuntoAtencion.objects.all()
     serializer_class = PuntoAtencionSerializer
@@ -319,116 +204,118 @@ class PuntoAtencionListCreate(generics.ListCreateAPIView):
             raise ValidationError("Solo administradores pueden crear puntos de atención")
         serializer.save()
 
-class UpdateCedulaView(APIView):
-    permission_classes = [IsAuthenticated]
+# Actualizar cédula
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_cedula_view(request):
+    user = request.user
+    cedula = request.data.get('cedula')
+    if not cedula:
+        return Response({'error': 'Cédula requerida'}, status=status.HTTP_400_BAD_REQUEST)
 
-    def post(self, request):
-        user = request.user
-        cedula = request.data.get('cedula')
-        if not cedula:
-            return Response({'error': 'Cédula requerida'}, status=status.HTTP_400_BAD_REQUEST)
+    if Usuario.objects.filter(cedula=cedula).exclude(id=user.id).exists():
+        return Response({'error': 'La cédula ya está registrada'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if Usuario.objects.filter(cedula=cedula).exclude(id=user.id).exists():
-            return Response({'error': 'La cédula ya está registrada'}, status=status.HTTP_400_BAD_REQUEST)
+    if not cedula.isdigit() or len(cedula) < 6 or len(cedula) > 20:
+        return Response({'error': 'La cédula debe ser numérica y tener entre 6 y 20 dígitos'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not cedula.isdigit() or len(cedula) < 6 or len(cedula) > 20:
-            return Response({'error': 'La cédula debe ser numérica y tener entre 6 y 20 dígitos'}, status=status.HTTP_400_BAD_REQUEST)
+    user.cedula = cedula
+    user.save()
+    return Response({
+        'user': {'id': user.id, 'nombre': user.nombre, 'es_profesional': user.es_profesional, 'cedula': user.cedula}
+    }, status=status.HTTP_200_OK)
 
-        user.cedula = cedula
-        user.save()
-        return Response({
-            'user': {'id': user.id, 'nombre': user.nombre, 'es_profesional': user.es_profesional, 'cedula': user.cedula}
-        }, status=status.HTTP_200_OK)
+# Cambiar contraseña
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password_view(request):
+    user = request.user
+    current_password = request.data.get('current_password')
+    new_password = request.data.get('new_password')
 
-class ChangePasswordView(APIView):
-    permission_classes = [IsAuthenticated]
+    if not current_password or not new_password:
+        return Response({'error': 'Se requieren la contraseña actual y la nueva'}, status=status.HTTP_400_BAD_REQUEST)
 
-    def post(self, request):
-        user = request.user
-        current_password = request.data.get('current_password')
-        new_password = request.data.get('new_password')
+    if not user.check_password(current_password):
+        return Response({'error': 'Contraseña actual incorrecta'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not current_password or not new_password:
-            return Response({'error': 'Se requieren la contraseña actual y la nueva'}, status=status.HTTP_400_BAD_REQUEST)
+    user.set_password(new_password)
+    user.save()
+    return Response({'message': 'Contraseña actualizada correctamente'}, status=status.HTTP_200_OK)
 
-        if not user.check_password(current_password):
-            return Response({'error': 'Contraseña actual incorrecta'}, status=status.HTTP_400_BAD_REQUEST)
+# Contacto
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def contact_view(request):
+    name = request.data.get('name')
+    email = request.data.get('email')
+    message = request.data.get('message')
 
-        user.set_password(new_password)
-        user.save()
-        return Response({'message': 'Contraseña actualizada correctamente'}, status=status.HTTP_200_OK)
+    if not all([name, email, message]):
+        return Response({'error': 'Todos los campos son requeridos'}, status=status.HTTP_400_BAD_REQUEST)
 
-class PuntoAtencionViewSet(viewsets.ModelViewSet):
-    queryset = PuntoAtencion.objects.all()
-    serializer_class = PuntoAtencionSerializer
-    permission_classes = [IsAuthenticated]
+    subject = f'Nuevo mensaje de contacto de {name}'
+    body = f'Nombre: {name}\nCorreo: {email}\nMensaje:\n{message}'
+    from_email = settings.EMAIL_HOST_USER
+    recipient_list = ['sistema.atenciondsi@gmail.com']
 
-class ContactView(APIView):
-    permission_classes = [AllowAny]
+    try:
+        send_mail(subject, body, from_email, recipient_list, fail_silently=False)
+        return Response({'message': 'Mensaje enviado exitosamente'}, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Error al enviar correo: {str(e)}")
+        return Response({'error': 'Error al enviar el mensaje'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def post(self, request):
-        name = request.data.get('name')
-        email = request.data.get('email')
-        message = request.data.get('message')
+# Actualizar perfil
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_profile_view(request):
+    user = request.user
+    name = request.data.get('name', user.nombre)
+    email = request.data.get('email', user.email)
 
-        if not all([name, email, message]):
-            return Response({'error': 'Todos los campos son requeridos'}, status=status.HTTP_400_BAD_REQUEST)
+    if Usuario.objects.filter(email=email).exclude(id=user.id).exists():
+        return Response({'error': 'El correo ya está registrado'}, status=status.HTTP_400_BAD_REQUEST)
 
-        subject = f'Nuevo mensaje de contacto de {name}'
-        body = f'Nombre: {name}\nCorreo: {email}\nMensaje:\n{message}'
-        from_email = settings.EMAIL_HOST_USER
-        recipient_list = ['sistema.atenciondsi@gmail.com']
+    user.nombre = name
+    user.email = email
+    user.save()
 
-        try:
-            send_mail(subject, body, from_email, recipient_list, fail_silently=False)
-            return Response({'message': 'Mensaje enviado exitosamente'}, status=status.HTTP_200_OK)
-        except Exception as e:
-            logger.error(f"Error al enviar correo: {str(e)}")
-            return Response({'error': 'Error al enviar el mensaje'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    serializer = UsuarioSerializer(user)
+    return Response({'message': 'Perfil actualizado', 'user': serializer.data}, status=status.HTTP_200_OK)
 
-class UpdateProfileView(APIView):
-    permission_classes = [IsAuthenticated]
+# Profesionales por punto de atención
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def punto_profesionales_view(request, pk):
+    profesionales = Usuario.objects.filter(puntoatencion__id=pk, es_profesional=True)
+    serializer = UsuarioSerializer(profesionales, many=True)
+    return Response(serializer.data)
 
-    def put(self, request):
-        user = request.user
-        name = request.data.get('name', user.nombre)
-        email = request.data.get('email', user.email)
+# Verificar disponibilidad
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def check_availability_view(request):
+    punto = request.query_params.get('punto')
+    fecha = request.query_params.get('fecha')
+    if not punto or not fecha:
+        return Response({'error': 'Faltan parámetros'}, status=status.HTTP_400_BAD_REQUEST)
 
-        user.nombre = name
-        user.email = email or None
-        user.save()
+    turnos = Turno.objects.filter(punto_atencion_id=punto, fecha_cita__date=fecha)
+    occupied_horas = [turno.fecha_cita.strftime('%H:%M') for turno in turnos]
+    logger.debug(f"Horas ocupadas para {fecha} en punto {punto}: {occupied_horas}")
+    return Response({'occupied': occupied_horas})
 
-        serializer = UsuarioSerializer(user)
-        return Response({'message': 'Perfil actualizado', 'user': serializer.data}, status=status.HTTP_200_OK)
-
-class PuntoProfesionalesView(APIView):
-    def get(self, request, pk):
-        profesionales = Usuario.objects.filter(puntoatencion__id=pk, es_profesional=True)
-        serializer = UsuarioSerializer(profesionales, many=True)
-        return Response(serializer.data)
-
-class CheckAvailabilityView(APIView):
-    def get(self, request):
-        punto = request.query_params.get('punto')
-        fecha = request.query_params.get('fecha')
-        if not punto or not fecha:
-            return Response({'error': 'Faltan parámetros'}, status=400)
-
-        turnos = Turno.objects.filter(punto_atencion_id=punto, fecha_cita__date=fecha)
-        occupied_horas = [turno.fecha_cita.strftime('%H:%M') for turno in turnos]
-        print(f"Horas ocupadas para {fecha} en punto {punto}: {occupied_horas}")
-        return Response({'occupied': occupied_horas})
-    
-class PuntoAtencionServicesView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        puntos = PuntoAtencion.objects.filter(activo=True)
-        data = {
-            punto.id: {
-                'nombre': punto.nombre,
-                'servicios': punto.servicios_texto.split('\n') if punto.servicios_texto else []
-            }
-            for punto in puntos
+# Servicios por punto de atención
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def punto_atencion_services_view(request):
+    puntos = PuntoAtencion.objects.filter(activo=True)
+    data = {
+        punto.id: {
+            'nombre': punto.nombre,
+            'servicios': punto.servicios_texto.split('\n') if punto.servicios_texto else []
         }
-        return Response(data)
+        for punto in puntos
+    }
+    return Response(data)

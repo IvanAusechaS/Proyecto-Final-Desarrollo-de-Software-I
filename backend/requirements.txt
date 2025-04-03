@@ -1,6 +1,18 @@
-requests
-djangorestframework-simplejwt
-firebase-admin
-python-decouple
-django
-djangorestframework
+# Core Django (includes django.contrib apps)
+django>=4.2,<5.0
+
+# CORS support
+django-cors-headers>=4.4.0
+
+# REST Framework and JWT authentication
+djangorestframework>=3.14.0
+djangorestframework-simplejwt>=5.3.1
+
+# Firebase integration
+firebase-admin>=6.5.0
+
+# Environment variable management
+python-decouple>=3.8
+
+# PostgreSQL database adapter
+psycopg2-binary>=2.9.9
