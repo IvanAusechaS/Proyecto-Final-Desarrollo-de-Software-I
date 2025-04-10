@@ -15,6 +15,7 @@ from .serializers import CustomTokenObtainPairSerializer, UsuarioSerializer, Pun
 from .models import Usuario, PuntoAtencion, Turno
 import logging
 from django.utils import timezone
+from django.db.models import Count
 
 logger = logging.getLogger(__name__)
 
@@ -291,6 +292,51 @@ def punto_profesionales_view(request, pk):
     profesionales = Usuario.objects.filter(puntoatencion__id=pk, es_profesional=True)
     serializer = UsuarioSerializer(profesionales, many=True)
     return Response(serializer.data)
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.utils import timezone
+from django.db.models import Count
+from .models import Turno, PuntoAtencion
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def profesional_stats_view(request):
+    user = request.user
+    if not user.es_profesional:
+        return Response({'error': 'Acceso denegado'}, status=403)
+
+    today = timezone.now().date()
+    punto = PuntoAtencion.objects.filter(profesional=user).first()
+    if not punto:
+        return Response({'error': 'No asignado a un punto de atención'}, status=400)
+
+    # Pacientes atendidos
+    pacientes_atendidos = Turno.objects.filter(
+        punto_atencion=punto,
+        estado='Atendido',
+        fecha=today
+    ).count()
+
+    # Citas más pedidas
+    citas_mas_pedidas = Turno.objects.filter(
+        punto_atencion=punto,
+        fecha=today
+    ).values('tipo_cita').annotate(total=Count('id')).order_by('-total')[:5]
+
+    # Turnos por punto de atención
+    turnos_por_punto = Turno.objects.filter(
+        punto_atencion=punto,
+        fecha=today,
+        estado__in=['En espera', 'En progreso']
+    ).count()
+
+    return Response({
+        'pacientes_atendidos': pacientes_atendidos,
+        'citas_mas_pedidas': list(citas_mas_pedidas),
+        'turnos_por_punto': turnos_por_punto
+    })
 
 # Verificar disponibilidad
 @api_view(['GET'])

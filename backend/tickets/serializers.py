@@ -82,16 +82,25 @@ class TurnoSerializer(serializers.ModelSerializer):
         source='punto_atencion',
         write_only=True
     )
+    punto_atencion_id_read = serializers.IntegerField(source='punto_atencion.id', read_only=True)  # Campo para leer el ID
     tipo_cita = serializers.CharField()
     prioridad = serializers.ChoiceField(choices=Turno.PRIORIDAD_CHOICES, default='N')
-    fecha = serializers.DateField(read_only=True)  # Explicitly define as DateField
+    fecha = serializers.DateField(read_only=True)
 
     class Meta:
         model = Turno
-        fields = ['id', 'numero', 'usuario', 'punto_atencion', 'punto_atencion_id', 'tipo_cita', 'fecha', 'fecha_cita', 'estado', 'prioridad', 'fecha_atencion', 'descripcion']
+        fields = [
+            'id', 'numero', 'usuario', 'punto_atencion', 'punto_atencion_id', 'punto_atencion_id_read',
+            'tipo_cita', 'fecha', 'fecha_cita', 'estado', 'prioridad', 'fecha_atencion', 'descripcion'
+        ]
         read_only_fields = ['id', 'numero', 'usuario', 'fecha', 'fecha_cita', 'fecha_atencion']
 
     def create(self, validated_data):
         validated_data['usuario'] = self.context['request'].user
-        validated_data['fecha'] = timezone.now().date()  # Asegura que fecha sea solo la fecha
+        validated_data['fecha'] = timezone.now().date()
         return super().create(validated_data)
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        print('Serializer data:', ret)  # Depuración para verificar la salida
+        return ret

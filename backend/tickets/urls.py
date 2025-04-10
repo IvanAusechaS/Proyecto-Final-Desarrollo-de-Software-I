@@ -18,6 +18,7 @@ from .views import (
     current_turnos_view,  # Importar como función
     punto_atencion_services_view,  # Importar como función
     ProfesionalTurnosList,
+    profesional_stats_view,
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -27,6 +28,7 @@ urlpatterns = [
     path('puntos-atencion/', PuntoAtencionListCreate.as_view(), name='punto-atencion-list-create'),
     path('buscar-usuario/<str:cedula>/', buscar_usuario_por_cedula, name='buscar-usuario'),
     path('profesional-turnos/', ProfesionalTurnosList.as_view(), name='profesional-turnos'),
+    path('profesional-stats/', profesional_stats_view, name='profesional-stats'),
     path('login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('logout/', logout_view, name='logout'),
