@@ -58,10 +58,10 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'sistema_atencion_dsi',
+        'NAME': 'postgres',
         'USER': 'postgres',
-        'PASSWORD': 'juanpablo1',
-        'HOST': 'localhost',
+        'PASSWORD': 'atenciondental',
+        'HOST': 'db.nioglxpfszrniapwwbtm.supabase.co',
         'PORT': '5432',
     }
 }
