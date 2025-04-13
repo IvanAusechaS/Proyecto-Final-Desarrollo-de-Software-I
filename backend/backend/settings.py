@@ -112,10 +112,10 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),  # Cambia a 1 hora
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),  # 1 día para el refresh
-    'AUTH_HEADER_TYPES': ('Bearer',),
-    'USER_ID_FIELD': 'id',
-    'USER_ID_CLAIM': 'user_id',
-}
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),  # Token de acceso válido por 1 hora
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),  # Token de refresco válido por 1 día
+    'AUTH_HEADER_TYPES': ('Bearer',),  # Tipo de encabezado para el token
+    'USER_ID_FIELD': 'id',  # Campo de ID del usuario
+    'USER_ID_CLAIM': 'user_id',  # Reclamo del ID del usuario en el token
+}   
 
