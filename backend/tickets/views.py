@@ -2,7 +2,7 @@ from django.core.mail import send_mail
 from django.conf import settings
 from django.utils.crypto import get_random_string
 from django.contrib.auth.hashers import make_password
-from rest_framework import generics, viewsets
+from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -19,10 +19,8 @@ from django.db.models import Count
 
 logger = logging.getLogger(__name__)
 
-# Login con email y JWT
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
-    permission_classes = [AllowAny]
 
 # Registro de usuarios con email
 @api_view(['POST'])
@@ -147,7 +145,6 @@ def current_turnos_view(request):
 
 # Listar y crear turnos
 class TurnoListCreate(generics.ListCreateAPIView):
-    queryset = Turno.objects.all()
     serializer_class = TurnoSerializer
     permission_classes = [IsAuthenticated]
 
@@ -155,7 +152,22 @@ class TurnoListCreate(generics.ListCreateAPIView):
         return Turno.objects.filter(usuario=self.request.user)
 
     def perform_create(self, serializer):
+        if not self.request.user.es_profesional:
+            current_time = timezone.now()
+            local_time = current_time.astimezone(timezone.get_default_timezone())
+            hour = local_time.hour
+            if not (8 <= hour < 12 or 14 <= hour < 16):
+                raise ValidationError('Los usuarios solo pueden crear citas entre 8:00-12:00 o 14:00-16:00.')
+        
         serializer.save(usuario=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        try:
+            logger.debug(f"Datos recibidos para crear turno: {request.data}")
+            return super().create(request, *args, **kwargs)
+        except ValidationError as e:
+            logger.error(f"Error al crear turno: {str(e)}")
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class ProfesionalTurnosList(generics.ListAPIView):
     serializer_class = TurnoSerializer
@@ -163,14 +175,36 @@ class ProfesionalTurnosList(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
+        logger.debug(f"Usuario autenticado: {user.email}, es_profesional: {user.es_profesional}")
+
         if not user.es_profesional:
-            return Turno.objects.none()  # No turnos si no es profesional
+            logger.warning(f"Usuario {user.email} no es profesional")
+            return Turno.objects.none()
+
+        # Obtener el punto de atención del profesional
+        punto = PuntoAtencion.objects.filter(profesional=user).first()
+        if not punto:
+            logger.warning(f"Usuario {user.email} no está asignado a un punto de atención")
+            return Turno.objects.none()
+
         today = timezone.now().date()
-        # Filtra turnos del punto de atención del profesional para el día actual
-        return Turno.objects.filter(
-            punto_atencion__profesional=user,
+        logger.debug(f"Fecha actual (today): {today}")
+
+        # Filtrar turnos del punto de atención del profesional para el día actual
+        turnos = Turno.objects.filter(
+            punto_atencion=punto,
             fecha=today
-        ).order_by('prioridad', 'fecha_cita')  # Prioridad 'P' primero
+        ).order_by('prioridad', 'fecha_cita')
+        
+        logger.debug(f"Turnos encontrados: {list(turnos)}")
+        return turnos
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        ret = serializer.data
+        logger.debug(f"Serializer data: {ret}")
+        return Response(ret)
 
 class TurnoDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Turno.objects.all()
@@ -180,8 +214,29 @@ class TurnoDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         user = self.request.user
         if not user.es_profesional:
+            logger.warning(f"Usuario {user.email} no es profesional")
             return Turno.objects.none()
         return Turno.objects.filter(punto_atencion__profesional=user)
+
+    def perform_update(self, serializer):
+        if 'estado' in self.request.data and 'fecha_cita' not in self.request.data:
+            serializer.save()
+        else:
+            fecha_cita = serializer.validated_data.get('fecha_cita')
+            if fecha_cita:
+                local_time = fecha_cita.astimezone(timezone.get_default_timezone())
+                validate_turno_time(local_time)
+            serializer.save()
+
+    def update(self, request, *args, **kwargs):
+        # Habilitar actualizaciones parciales para PUT
+        kwargs['partial'] = True
+        try:
+            logger.debug(f"Datos recibidos para actualizar turno: {request.data}")
+            return super().update(request, *args, **kwargs)
+        except ValidationError as e:
+            logger.error(f"Error al actualizar turno: {str(e)}")
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 # Listar y crear puntos de atención
 class PuntoAtencionListCreate(generics.ListCreateAPIView):
@@ -305,11 +360,13 @@ from .models import Turno, PuntoAtencion
 def profesional_stats_view(request):
     user = request.user
     if not user.es_profesional:
+        logger.warning(f"Usuario {user.email} no es profesional")
         return Response({'error': 'Acceso denegado'}, status=403)
 
     today = timezone.now().date()
     punto = PuntoAtencion.objects.filter(profesional=user).first()
     if not punto:
+        logger.warning(f"Usuario {user.email} no está asignado a un punto de atención")
         return Response({'error': 'No asignado a un punto de atención'}, status=400)
 
     # Pacientes atendidos
@@ -325,17 +382,39 @@ def profesional_stats_view(request):
         fecha=today
     ).values('tipo_cita').annotate(total=Count('id')).order_by('-total')[:5]
 
-    # Turnos por punto de atención
+    # Turnos por punto de atención (en espera o en progreso)
     turnos_por_punto = Turno.objects.filter(
         punto_atencion=punto,
         fecha=today,
         estado__in=['En espera', 'En progreso']
     ).count()
 
+    # Distribución por prioridad
+    turnos_por_prioridad = Turno.objects.filter(
+        punto_atencion=punto,
+        fecha=today
+    ).values('prioridad').annotate(total=Count('id'))
+
+    prioridad_data = {'Prioritario': 0, 'Normal': 0}
+    for item in turnos_por_prioridad:
+        key = 'Prioritario' if item['prioridad'] == 'P' else 'Normal'
+        prioridad_data[key] = item['total']
+
+    # Obtener todos los turnos del punto de atención para el día actual
+    turnos = Turno.objects.filter(
+        punto_atencion=punto,
+        fecha=today
+    ).order_by('prioridad', 'fecha_cita')
+    turnos_serializer = TurnoSerializer(turnos, many=True)
+
+    logger.debug(f"Turnos enviados a las gráficas: {turnos_serializer.data}")
+
     return Response({
         'pacientes_atendidos': pacientes_atendidos,
         'citas_mas_pedidas': list(citas_mas_pedidas),
-        'turnos_por_punto': turnos_por_punto
+        'turnos_por_punto': turnos_por_punto,
+        'prioridad_data': prioridad_data,
+        'turnos': turnos_serializer.data  # Añadimos los turnos completos
     })
 
 # Verificar disponibilidad

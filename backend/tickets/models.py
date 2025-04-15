@@ -2,6 +2,9 @@ from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils import timezone
 from django.core.exceptions import ValidationError
+import logging
+
+logger = logging.getLogger(__name__)
 
 class UsuarioManager(BaseUserManager):
     def create_user(self, email, nombre, password=None, cedula=None, es_profesional=False, **extra_fields):
@@ -68,7 +71,12 @@ class PuntoAtencion(models.Model):
         return self.nombre
 
 def validate_turno_time(value):
-    hour = value.hour
+    # Asegurarse de que el datetime tenga una zona horaria
+    if timezone.is_naive(value):
+        value = timezone.make_aware(value, timezone.get_default_timezone())
+    # Convertir a la zona horaria local del servidor
+    local_time = value.astimezone(timezone.get_default_timezone())
+    hour = local_time.hour
     if not (8 <= hour < 12 or 14 <= hour < 16):
         raise ValidationError('Los turnos solo pueden ser entre 8:00-12:00 o 14:00-16:00.')
 
@@ -88,8 +96,8 @@ class Turno(models.Model):
     usuario = models.ForeignKey('Usuario', on_delete=models.CASCADE)
     punto_atencion = models.ForeignKey('PuntoAtencion', on_delete=models.CASCADE)
     tipo_cita = models.CharField(max_length=50)
-    fecha = models.DateField(default=timezone.now)  # Nuevo campo para la fecha
-    fecha_cita = models.DateTimeField(default=timezone.now)  # Mantiene la hora exacta
+    fecha = models.DateField()  # Quitamos el default para setearlo manualmente
+    fecha_cita = models.DateTimeField(validators=[validate_turno_time])  # Añadimos el validador
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='En espera')
     prioridad = models.CharField(max_length=1, choices=PRIORIDAD_CHOICES, default='N')
     fecha_atencion = models.DateTimeField(null=True, blank=True)
@@ -99,6 +107,7 @@ class Turno(models.Model):
         unique_together = ('punto_atencion', 'numero', 'fecha')  # Unicidad por día y punto
 
     def save(self, *args, **kwargs):
+        # Generar el número del turno
         if not self.numero:
             today = timezone.now().date()
             last_turno = Turno.objects.filter(
@@ -111,9 +120,24 @@ class Turno(models.Model):
             else:
                 new_num = 1
             self.numero = f"N{new_num:03d}"  # Ej: N001
-        if not self.fecha:  # Asegura que fecha se setee
-            self.fecha = self.fecha_cita.date()
+            logger.debug(f"Generado número de turno: {self.numero} para punto_atencion: {self.punto_atencion}, fecha: {today}")
+
+        # Asegurarse de que fecha_cita tenga una zona horaria
+        if self.fecha_cita and timezone.is_naive(self.fecha_cita):
+            self.fecha_cita = timezone.make_aware(self.fecha_cita)
+            logger.debug(f"fecha_cita convertida a aware: {self.fecha_cita}")
+
+        # Setear fecha a partir de fecha_cita
+        if not self.fecha:
+            fecha_cita_local = timezone.localtime(self.fecha_cita)  # Convertir a la zona horaria local (America/Bogota)
+            self.fecha = fecha_cita_local.date()
+            logger.debug(f"Seteando fecha: {self.fecha} a partir de fecha_cita: {self.fecha_cita}")
+
+        # Validar manualmente el horario de fecha_cita
+        validate_turno_time(self.fecha_cita)
+
         super().save(*args, **kwargs)
+        logger.debug(f"Turno guardado: {self.numero}, fecha: {self.fecha}, fecha_cita: {self.fecha_cita}")
 
     def __str__(self):
         return f"{self.numero} - {self.punto_atencion.nombre}"
