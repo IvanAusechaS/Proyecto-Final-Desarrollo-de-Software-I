@@ -43,21 +43,40 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 class UsuarioSerializer(serializers.ModelSerializer):
-    usuario = serializers.PrimaryKeyRelatedField(queryset=Usuario.objects.all())
-    punto_atencion = serializers.PrimaryKeyRelatedField(queryset=PuntoAtencion.objects.all())
-    punto_atencion_id_read = serializers.PrimaryKeyRelatedField(source='punto_atencion', read_only=True)
+    usuario = serializers.PrimaryKeyRelatedField(queryset=Usuario.objects.all(), required=False)  # Make optional
+    punto_atencion = serializers.SerializerMethodField()
+    punto_atencion_id_read = serializers.IntegerField(source='punto_atencion.id', read_only=True)
     password = serializers.CharField(write_only=True)
 
     class Meta:
         model = Usuario
-        fields = ['id', 'cedula', 'email', 'nombre', 'password', 'es_profesional']
+        fields = [
+            'id', 'cedula', 'email', 'nombre', 'password', 'es_profesional',
+            'punto_atencion', 'punto_atencion_id_read',
+            'usuario'
+        ]
         read_only_fields = ['id']
+
+    def get_punto_atencion(self, obj):
+        punto = obj.punto_atencion
+        logger.debug(f"Serializando punto_atencion para usuario {obj.email}: {punto.nombre if punto else 'Ninguno'}")
+        return {
+            'id': punto.id,
+            'nombre': punto.nombre,
+            'ubicacion': punto.ubicacion,
+            'activo': punto.activo
+        } if punto else None
 
     def validate_cedula(self, value):
         if not value.isdigit():
             raise serializers.ValidationError('La cédula debe contener solo números.')
         if len(value) < 6 or len(value) > 20:
             raise serializers.ValidationError('La cédula debe tener entre 6 y 20 dígitos.')
+        return value
+    
+    def validate_email(self, value):
+        if Usuario.objects.filter(email=value).exists():
+            raise serializers.ValidationError('Ya existe un usuario con este correo electrónico.')
         return value
 
     def validate(self, data):

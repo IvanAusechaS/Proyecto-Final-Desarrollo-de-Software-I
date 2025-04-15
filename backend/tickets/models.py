@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, connection
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils import timezone
 from django.core.exceptions import ValidationError
@@ -7,10 +7,28 @@ import logging
 logger = logging.getLogger(__name__)
 
 class UsuarioManager(BaseUserManager):
+    def update_id_sequence(self):
+        """
+        Update the tickets_usuario_id_seq sequence to the next available ID
+        based on the maximum id in the usuario table.
+        """
+        with connection.cursor() as cursor:
+            # Get the maximum id from the usuario table
+            cursor.execute("SELECT MAX(id) FROM tickets_usuario")
+            max_id = cursor.fetchone()[0] or 0  # Default to 0 if table is empty
+            next_id = max_id + 1
+            # Update the sequence to the next available id
+            cursor.execute("SELECT setval('tickets_usuario_id_seq', %s)", [max_id])
+            logger.info(f"Updated tickets_usuario_id_seq to next available id: {next_id}")
+
     def create_user(self, email, nombre, password=None, cedula=None, es_profesional=False, **extra_fields):
         if not email:
             raise ValueError('El correo electrónico es obligatorio')
         email = self.normalize_email(email)
+
+        # Update the sequence before creating the user
+        self.update_id_sequence()
+
         user = self.model(
             email=email,
             nombre=nombre,

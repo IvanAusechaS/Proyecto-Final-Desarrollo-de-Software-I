@@ -29,22 +29,29 @@ def register_view(request):
     logger.debug(f"Datos recibidos: {request.data}")
     serializer = UsuarioSerializer(data=request.data)
     if serializer.is_valid():
-        user = serializer.save()
-        logger.info(f"Usuario {user.email} registrado exitosamente")
-        refresh = RefreshToken.for_user(user)
-        return Response({
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-            'user': {
-                'id': user.id,
-                'email': user.email,
-                'nombre': user.nombre,
-                'cedula': user.cedula,
-                'es_profesional': user.es_profesional
-            }
-        }, status=201)
+        try:
+            user = serializer.save()
+            logger.info(f"Usuario {user.email} registrado exitosamente")
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+                'user': {
+                    'id': user.id,
+                    'email': user.email,
+                    'nombre': user.nombre,
+                    'cedula': user.cedula,
+                    'es_profesional': user.es_profesional
+                }
+            }, status=201)
+        except Exception as e:
+            logger.error(f"Error al registrar usuario: {str(e)}")
+            return Response({
+                'error': 'Error al registrar el usuario',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     logger.error(f"Errores de validación: {serializer.errors}")
-    return Response({'error': serializer.errors}, status=400)
+    return Response({'error': 'Datos inválidos', 'details': serializer.errors}, status=400)
 
 # Logout
 @api_view(['POST'])

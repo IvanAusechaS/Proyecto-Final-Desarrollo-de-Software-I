@@ -59,14 +59,13 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'sistema_atencion_dsi',
+        'NAME': 'postgres',
         'USER': 'postgres',
-        'PASSWORD': 'KiaraMia77@',
-        'HOST': 'localhost',
+        'PASSWORD': 'atenciondental',
+        'HOST': 'db.nioglxpfszrniapwwbtm.supabase.co',
         'PORT': '5432',
     }
 }
-
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
