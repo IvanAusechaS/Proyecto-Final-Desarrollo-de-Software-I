@@ -1,7 +1,8 @@
 from django.urls import path
 from .views import CustomTokenObtainPairView
 from .views import (
-    TurnoListCreate,
+    list_turnos_view,
+    create_turno_view,
     TurnoDetailView,
     PuntoAtencionListCreate,
     buscar_usuario_por_cedula,  # Importar como función
@@ -24,7 +25,8 @@ from .views import (
 from rest_framework_simplejwt.views import TokenRefreshView
 
 urlpatterns = [
-    path('turnos/', TurnoListCreate.as_view(), name='turno-list-create'),
+    path('turnos/list/', list_turnos_view, name='list_turnos'),  
+    path('turnos/create/', create_turno_view, name='create_turno'),  
     path('turnos/<int:pk>/', TurnoDetailView.as_view(), name='turno_detail'),
     path('profesional-turnos/<int:pk>/', TurnoDetailView.as_view(), name='profesional_turno_detail'),
     path('puntos-atencion/', PuntoAtencionListCreate.as_view(), name='punto-atencion-list-create'),

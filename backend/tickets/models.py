@@ -95,8 +95,9 @@ def validate_turno_time(value):
     # Convertir a la zona horaria local del servidor
     local_time = value.astimezone(timezone.get_default_timezone())
     hour = local_time.hour
-    if not (8 <= hour < 12 or 14 <= hour < 16):
-        raise ValidationError('Los turnos solo pueden ser entre 8:00-12:00 o 14:00-16:00.')
+    # Validar que la hora esté entre las 8:00 AM (8) y las 10:00 PM (22)
+    if not (8 <= hour < 22):
+        raise ValidationError('Los turnos solo pueden ser entre 8:00 y 22:00.')
 
 class Turno(models.Model):
     ESTADO_CHOICES = [
