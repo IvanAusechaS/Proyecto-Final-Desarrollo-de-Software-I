@@ -59,11 +59,14 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'postgres',
-        'USER': 'postgres',
-        'PASSWORD': 'atenciondental',
-        'HOST': 'db.nioglxpfszrniapwwbtm.supabase.co',
-        'PORT': '5432',
+        'NAME': config('DATABASE_NAME'),
+        'USER': config('DATABASE_USER'),
+        'PASSWORD': config('DATABASE_PASSWORD'),
+        'HOST': config('DATABASE_HOST'),
+        'PORT': config('DATABASE_PORT'),
+        'OPTIONS': {
+            'sslmode': 'require',
+        },
     }
 }
 AUTH_PASSWORD_VALIDATORS = [
