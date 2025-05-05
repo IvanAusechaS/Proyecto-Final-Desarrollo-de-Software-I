@@ -16,6 +16,8 @@ from .models import Usuario, PuntoAtencion, Turno
 import logging
 from django.utils import timezone
 from django.db.models import Count
+from itertools import zip_longest
+from .utils import get_intercalated_turnos_by_punto
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +202,7 @@ class ProfesionalTurnosList(generics.ListAPIView):
     def get_queryset(self):
         user = self.request.user
         logger.debug(f"Usuario autenticado: {user.email}, es_profesional: {user.es_profesional}")
-
+        
         if not user.es_profesional:
             logger.warning(f"Usuario {user.email} no es profesional")
             return Turno.objects.none()
@@ -214,13 +216,8 @@ class ProfesionalTurnosList(generics.ListAPIView):
         today = timezone.now().date()
         logger.debug(f"Fecha actual (today): {today}")
 
-        # Filtrar turnos del punto de atención del profesional para el día actual
-        turnos = Turno.objects.filter(
-            punto_atencion=punto,
-            fecha=today
-        ).order_by('prioridad', 'fecha_cita')
-        
-        logger.debug(f"Turnos encontrados: {list(turnos)}")
+        # 🔁 Obtener turnos intercalados desde la función utilitaria
+        turnos = get_intercalated_turnos_by_punto(punto)
         return turnos
 
     def list(self, request, *args, **kwargs):
