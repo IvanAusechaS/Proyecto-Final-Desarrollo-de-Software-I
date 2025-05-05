@@ -473,41 +473,45 @@ def punto_atencion_services_view(request):
 @permission_classes([IsAuthenticated])
 def pending_turnos_by_service(request):
     puntos = PuntoAtencion.objects.filter(activo=True)
+    
+    prioritarios = []
+    normales = []
     resultados = []
 
     for punto in puntos:
         # Turno prioritario
         turno_prioritario = Turno.objects.filter(
-            punto_atencion=punto,
-            estado='En espera',
-            prioridad='P'
-        ).order_by('fecha_cita').first()
+             punto_atencion=punto,
+             estado='En espera',
+             prioridad='P'
+         ).order_by('fecha_cita').first()
 
         if turno_prioritario:
-            resultados.append({
-                'id': turno_prioritario.id,
-                'codigo_turno': turno_prioritario.numero,
-                'punto_atencion_id': punto.id,
-                'punto_atencion_nombre': punto.nombre,
-                'prioridad': 'P',
-                'fecha_creacion': turno_prioritario.fecha_cita
-            })
+             resultados.append({
+                 'id': turno_prioritario.id,
+                 'codigo_turno': turno_prioritario.numero,
+                 'punto_atencion_id': punto.id,
+                 'punto_atencion_nombre': punto.nombre,
+                 'prioridad': 'P',
+                 'fecha_creacion': turno_prioritario.fecha_cita
+             })
 
-        # Turno normal
+         # Turno normal
         turno_normal = Turno.objects.filter(
-            punto_atencion=punto,
-            estado='En espera',
-            prioridad='N'
-        ).order_by('fecha_cita').first()
+             punto_atencion=punto,
+             estado='En espera',
+             prioridad='N'
+         ).order_by('fecha_cita').first()
 
         if turno_normal:
-            resultados.append({
-                'id': turno_normal.id,
-                'codigo_turno': turno_normal.numero,
-                'punto_atencion_id': punto.id,
-                'punto_atencion_nombre': punto.nombre,
-                'prioridad': 'N',
-                'fecha_creacion': turno_normal.fecha_cita
-            })
+             resultados.append({
+                 'id': turno_normal.id,
+                 'codigo_turno': turno_normal.numero,
+                 'punto_atencion_id': punto.id,
+                 'punto_atencion_nombre': punto.nombre,
+                 'prioridad': 'N',
+                 'fecha_creacion': turno_normal.fecha_cita
+             })
+    
 
     return Response(resultados)
