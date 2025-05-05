@@ -18,6 +18,7 @@ from .views import (
     check_availability_view,  # Importar como función
     current_turnos_view,  # Importar como función
     punto_atencion_services_view,  # Importar como función
+    pending_turnos_by_service,  # Importar como función
     ProfesionalTurnosList,
     profesional_stats_view,
     CustomTokenObtainPairView,
@@ -47,4 +48,5 @@ urlpatterns = [
     path('turnos/check-availability/', check_availability_view, name='check-availability'),
     path('current-turnos/', current_turnos_view, name='current-turnos'),
     path('puntos-atencion-services/', punto_atencion_services_view, name='punto-atencion-services'),
+    path('pending-turnos-by-service/', pending_turnos_by_service, name='pending-turnos-by-service'),
 ]
