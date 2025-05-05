@@ -473,22 +473,26 @@ def punto_atencion_services_view(request):
 @permission_classes([IsAuthenticated])
 def pending_turnos_by_service(request):
     puntos = PuntoAtencion.objects.filter(activo=True)
+    hoy = timezone.now().date()
+    mañana = hoy + timezone.timedelta(days=1)
     
-    prioritarios = []
-    normales = []
     resultados = []
 
     for punto in puntos:
         turnos_prioritarios = Turno.objects.filter(
             punto_atencion=punto,
+            prioridad='P',
             estado='En espera',
-            prioridad='P'
+            fecha_cita__gte=hoy,
+            fecha_cita__lt=mañana
         ).order_by('fecha_cita')
 
         turnos_normales = Turno.objects.filter(
             punto_atencion=punto,
+            prioridad='N',
             estado='En espera',
-            prioridad='N'
+            fecha_cita__gte=hoy,
+            fecha_cita__lt=mañana
         ).order_by('fecha_cita')
 
         cola_prioritarios = []
