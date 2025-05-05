@@ -3,6 +3,9 @@ from pathlib import Path
 from decouple import config
 from datetime import timedelta
 
+# Debug: Print a variable to confirm it’s being read
+print("DATABASE_NAME:", config('DATABASE_NAME'))
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'tu_clave_secreta_aqui'  # Asegúrate de que esto esté definido
@@ -21,6 +24,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'tickets',
 ]
 
@@ -58,11 +62,14 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'postgres',
-        'USER': 'postgres',
-        'PASSWORD': 'atenciondental',
-        'HOST': 'db.nioglxpfszrniapwwbtm.supabase.co',
-        'PORT': '5432',
+        'NAME': config('DATABASE_NAME'),
+        'USER': config('DATABASE_USER'),
+        'PASSWORD': config('DATABASE_PASSWORD'),
+        'HOST': config('DATABASE_HOST'),
+        'PORT': config('DATABASE_PORT'),
+        'OPTIONS': {
+            'sslmode': 'require',
+        },
     }
 }
 
@@ -74,9 +81,35 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = 'es'
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'America/Bogota'
 USE_I18N = True
 USE_TZ = True
+
+# Configuración de logging para depuración
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        '': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    },
+}
 
 STATIC_URL = 'static/'
 
@@ -112,10 +145,11 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),  # Token de acceso válido por 1 hora
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),  # Token de refresco válido por 1 día
-    'AUTH_HEADER_TYPES': ('Bearer',),  # Tipo de encabezado para el token
-    'USER_ID_FIELD': 'id',  # Campo de ID del usuario
-    'USER_ID_CLAIM': 'user_id',  # Reclamo del ID del usuario en el token
-}   
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),  # Cambia a 1 hora
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),  # 1 día para el refresh
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    'BLACKLIST_AFTER_ROTATION': True,
+}
 

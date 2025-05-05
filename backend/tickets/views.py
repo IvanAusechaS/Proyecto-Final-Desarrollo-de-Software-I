@@ -2,7 +2,7 @@ from django.core.mail import send_mail
 from django.conf import settings
 from django.utils.crypto import get_random_string
 from django.contrib.auth.hashers import make_password
-from rest_framework import generics, viewsets
+from rest_framework import generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -15,13 +15,12 @@ from .serializers import CustomTokenObtainPairSerializer, UsuarioSerializer, Pun
 from .models import Usuario, PuntoAtencion, Turno
 import logging
 from django.utils import timezone
+from django.db.models import Count
 
 logger = logging.getLogger(__name__)
 
-# Login con email y JWT
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
-    permission_classes = [AllowAny]
 
 # Registro de usuarios con email
 @api_view(['POST'])
@@ -30,22 +29,29 @@ def register_view(request):
     logger.debug(f"Datos recibidos: {request.data}")
     serializer = UsuarioSerializer(data=request.data)
     if serializer.is_valid():
-        user = serializer.save()
-        logger.info(f"Usuario {user.email} registrado exitosamente")
-        refresh = RefreshToken.for_user(user)
-        return Response({
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-            'user': {
-                'id': user.id,
-                'email': user.email,
-                'nombre': user.nombre,
-                'cedula': user.cedula,
-                'es_profesional': user.es_profesional
-            }
-        }, status=201)
+        try:
+            user = serializer.save()
+            logger.info(f"Usuario {user.email} registrado exitosamente")
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+                'user': {
+                    'id': user.id,
+                    'email': user.email,
+                    'nombre': user.nombre,
+                    'cedula': user.cedula,
+                    'es_profesional': user.es_profesional
+                }
+            }, status=201)
+        except Exception as e:
+            logger.error(f"Error al registrar usuario: {str(e)}")
+            return Response({
+                'error': 'Error al registrar el usuario',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     logger.error(f"Errores de validación: {serializer.errors}")
-    return Response({'error': serializer.errors}, status=400)
+    return Response({'error': 'Datos inválidos', 'details': serializer.errors}, status=400)
 
 # Logout
 @api_view(['POST'])
@@ -137,24 +143,55 @@ def current_turnos_view(request):
             estado='En espera',
             fecha=today
         ).order_by('prioridad', 'fecha_cita').count()
-        estimated_times[punto.id] = turnos_espera * 15
+        estimated_times[punto.id] = turnos_espera * 15 # minutos
 
     return Response({
         'current_turnos': current_turnos,
         'estimated_times': estimated_times
     })
 
-# Listar y crear turnos
-class TurnoListCreate(generics.ListCreateAPIView):
-    queryset = Turno.objects.all()
-    serializer_class = TurnoSerializer
-    permission_classes = [IsAuthenticated]
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_turno_view(request):
+    user = request.user
+    data = request.data.copy()
+    
+    # Log incoming data for debugging
+    logger.debug(f"Datos recibidos del frontend: {data}")
 
-    def get_queryset(self):
-        return Turno.objects.filter(usuario=self.request.user)
+    # Si no se proporciona fecha_cita, usar la hora actual en UTC
+    if 'fecha_cita' not in data:
+        fecha_cita = timezone.now()  # This is already in UTC if USE_TZ=True
+        data['fecha_cita'] = fecha_cita.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        logger.debug(f"fecha_cita no proporcionada, establecida a: {data['fecha_cita']}")
 
-    def perform_create(self, serializer):
-        serializer.save(usuario=self.request.user)
+    # Asegurarse de que prioridad esté en el formato correcto ('N' o 'P')
+    if 'prioridad' in data and data['prioridad'] not in ['N', 'P']:
+        logger.warning(f"Prioridad inválida recibida: {data['prioridad']}. Ajustando a 'N'.")
+        data['prioridad'] = 'N'  # Valor por defecto si el frontend envía un valor inválido
+
+    # Serializar y validar los datos
+    serializer = TurnoSerializer(data=data, context={'request': request})
+    if serializer.is_valid():
+        turno = serializer.save(usuario=user)
+        logger.info(f"Turno creado: {turno.numero} para usuario {user.email}, fecha_cita: {turno.fecha_cita}, prioridad: {turno.prioridad}")
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    # Log errors for debugging
+    logger.error(f"Error al crear turno: {serializer.errors}")
+    return Response({'errors': serializer.errors, 'received_data': data}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_turnos_view(request):
+    try:
+        turnos = Turno.objects.filter(usuario=request.user)
+        serializer = TurnoSerializer(turnos, many=True, context={'request': request})
+        logger.debug(f"Turnos listados para usuario {request.user.email}: {len(turnos)} turnos")
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Error al listar turnos: {str(e)}")
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class ProfesionalTurnosList(generics.ListAPIView):
     serializer_class = TurnoSerializer
@@ -162,14 +199,36 @@ class ProfesionalTurnosList(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
+        logger.debug(f"Usuario autenticado: {user.email}, es_profesional: {user.es_profesional}")
+
         if not user.es_profesional:
-            return Turno.objects.none()  # No turnos si no es profesional
+            logger.warning(f"Usuario {user.email} no es profesional")
+            return Turno.objects.none()
+
+        # Obtener el punto de atención del profesional
+        punto = PuntoAtencion.objects.filter(profesional=user).first()
+        if not punto:
+            logger.warning(f"Usuario {user.email} no está asignado a un punto de atención")
+            return Turno.objects.none()
+
         today = timezone.now().date()
-        # Filtra turnos del punto de atención del profesional para el día actual
-        return Turno.objects.filter(
-            punto_atencion__profesional=user,
+        logger.debug(f"Fecha actual (today): {today}")
+
+        # Filtrar turnos del punto de atención del profesional para el día actual
+        turnos = Turno.objects.filter(
+            punto_atencion=punto,
             fecha=today
-        ).order_by('prioridad', 'fecha_cita')  # Prioridad 'P' primero
+        ).order_by('prioridad', 'fecha_cita')
+        
+        logger.debug(f"Turnos encontrados: {list(turnos)}")
+        return turnos
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        ret = serializer.data
+        logger.debug(f"Serializer data: {ret}")
+        return Response(ret)
 
 class TurnoDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Turno.objects.all()
@@ -179,8 +238,29 @@ class TurnoDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         user = self.request.user
         if not user.es_profesional:
+            logger.warning(f"Usuario {user.email} no es profesional")
             return Turno.objects.none()
         return Turno.objects.filter(punto_atencion__profesional=user)
+
+    def perform_update(self, serializer):
+        if 'estado' in self.request.data and 'fecha_cita' not in self.request.data:
+            serializer.save()
+        else:
+            fecha_cita = serializer.validated_data.get('fecha_cita')
+            if fecha_cita:
+                local_time = fecha_cita.astimezone(timezone.get_default_timezone())
+                validate_turno_time(local_time)
+            serializer.save()
+
+    def update(self, request, *args, **kwargs):
+        # Habilitar actualizaciones parciales para PUT
+        kwargs['partial'] = True
+        try:
+            logger.debug(f"Datos recibidos para actualizar turno: {request.data}")
+            return super().update(request, *args, **kwargs)
+        except ValidationError as e:
+            logger.error(f"Error al actualizar turno: {str(e)}")
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 # Listar y crear puntos de atención
 class PuntoAtencionListCreate(generics.ListCreateAPIView):
@@ -291,6 +371,75 @@ def punto_profesionales_view(request, pk):
     profesionales = Usuario.objects.filter(puntoatencion__id=pk, es_profesional=True)
     serializer = UsuarioSerializer(profesionales, many=True)
     return Response(serializer.data)
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.utils import timezone
+from django.db.models import Count
+from .models import Turno, PuntoAtencion
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def profesional_stats_view(request):
+    user = request.user
+    if not user.es_profesional:
+        logger.warning(f"Usuario {user.email} no es profesional")
+        return Response({'error': 'Acceso denegado'}, status=403)
+
+    today = timezone.now().date()
+    punto = PuntoAtencion.objects.filter(profesional=user).first()
+    if not punto:
+        logger.warning(f"Usuario {user.email} no está asignado a un punto de atención")
+        return Response({'error': 'No asignado a un punto de atención'}, status=400)
+
+    # Pacientes atendidos
+    pacientes_atendidos = Turno.objects.filter(
+        punto_atencion=punto,
+        estado='Atendido',
+        fecha=today
+    ).count()
+
+    # Citas más pedidas
+    citas_mas_pedidas = Turno.objects.filter(
+        punto_atencion=punto,
+        fecha=today
+    ).values('tipo_cita').annotate(total=Count('id')).order_by('-total')[:5]
+
+    # Turnos por punto de atención (en espera o en progreso)
+    turnos_por_punto = Turno.objects.filter(
+        punto_atencion=punto,
+        fecha=today,
+        estado__in=['En espera', 'En progreso']
+    ).count()
+
+    # Distribución por prioridad
+    turnos_por_prioridad = Turno.objects.filter(
+        punto_atencion=punto,
+        fecha=today
+    ).values('prioridad').annotate(total=Count('id'))
+
+    prioridad_data = {'Prioritario': 0, 'Normal': 0}
+    for item in turnos_por_prioridad:
+        key = 'Prioritario' if item['prioridad'] == 'P' else 'Normal'
+        prioridad_data[key] = item['total']
+
+    # Obtener todos los turnos del punto de atención para el día actual
+    turnos = Turno.objects.filter(
+        punto_atencion=punto,
+        fecha=today
+    ).order_by('prioridad', 'fecha_cita')
+    turnos_serializer = TurnoSerializer(turnos, many=True)
+
+    logger.debug(f"Turnos enviados a las gráficas: {turnos_serializer.data}")
+
+    return Response({
+        'pacientes_atendidos': pacientes_atendidos,
+        'citas_mas_pedidas': list(citas_mas_pedidas),
+        'turnos_por_punto': turnos_por_punto,
+        'prioridad_data': prioridad_data,
+        'turnos': turnos_serializer.data  # Añadimos los turnos completos
+    })
 
 # Verificar disponibilidad
 @api_view(['GET'])
