@@ -131,14 +131,15 @@ class Turno(models.Model):
             today = timezone.now().date()
             last_turno = Turno.objects.filter(
                 punto_atencion=self.punto_atencion,
-                fecha=today
+                fecha=today,
+                prioridad=self.prioridad
             ).order_by('numero').last()
-            if last_turno and last_turno.numero.startswith('N'):
+            if last_turno and last_turno.numero.startswith(self.prioridad):
                 last_num = int(last_turno.numero[1:])  # Extrae el número después de 'N'
                 new_num = last_num + 1
             else:
                 new_num = 1
-            self.numero = f"N{new_num:03d}"  # Ej: N001
+            self.numero = f"{self.prioridad}{new_num:03d}"  # Ej: N001
             logger.debug(f"Generado número de turno: {self.numero} para punto_atencion: {self.punto_atencion}, fecha: {today}")
 
         # Asegurarse de que fecha_cita tenga una zona horaria
