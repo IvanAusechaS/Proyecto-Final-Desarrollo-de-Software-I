@@ -2,7 +2,7 @@ from django.core.mail import send_mail
 from django.conf import settings
 from django.utils.crypto import get_random_string
 from django.contrib.auth.hashers import make_password
-from rest_framework import generics, status
+from rest_framework import generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -143,38 +143,55 @@ def current_turnos_view(request):
             estado='En espera',
             fecha=today
         ).order_by('prioridad', 'fecha_cita').count()
-        estimated_times[punto.id] = turnos_espera * 15
+        estimated_times[punto.id] = turnos_espera * 15 # minutos
 
     return Response({
         'current_turnos': current_turnos,
         'estimated_times': estimated_times
     })
 
-# Listar y crear turnos
-class TurnoListCreate(generics.ListCreateAPIView):
-    serializer_class = TurnoSerializer
-    permission_classes = [IsAuthenticated]
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_turno_view(request):
+    user = request.user
+    data = request.data.copy()
+    
+    # Log incoming data for debugging
+    logger.debug(f"Datos recibidos del frontend: {data}")
 
-    def get_queryset(self):
-        return Turno.objects.filter(usuario=self.request.user)
+    # Si no se proporciona fecha_cita, usar la hora actual en UTC
+    if 'fecha_cita' not in data:
+        fecha_cita = timezone.now()  # This is already in UTC if USE_TZ=True
+        data['fecha_cita'] = fecha_cita.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        logger.debug(f"fecha_cita no proporcionada, establecida a: {data['fecha_cita']}")
 
-    def perform_create(self, serializer):
-        if not self.request.user.es_profesional:
-            current_time = timezone.now()
-            local_time = current_time.astimezone(timezone.get_default_timezone())
-            hour = local_time.hour
-            if not (8 <= hour < 12 or 14 <= hour < 16):
-                raise ValidationError('Los usuarios solo pueden crear citas entre 8:00-12:00 o 14:00-16:00.')
-        
-        serializer.save(usuario=self.request.user)
+    # Asegurarse de que prioridad esté en el formato correcto ('N' o 'P')
+    if 'prioridad' in data and data['prioridad'] not in ['N', 'P']:
+        logger.warning(f"Prioridad inválida recibida: {data['prioridad']}. Ajustando a 'N'.")
+        data['prioridad'] = 'N'  # Valor por defecto si el frontend envía un valor inválido
 
-    def create(self, request, *args, **kwargs):
-        try:
-            logger.debug(f"Datos recibidos para crear turno: {request.data}")
-            return super().create(request, *args, **kwargs)
-        except ValidationError as e:
-            logger.error(f"Error al crear turno: {str(e)}")
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    # Serializar y validar los datos
+    serializer = TurnoSerializer(data=data, context={'request': request})
+    if serializer.is_valid():
+        turno = serializer.save(usuario=user)
+        logger.info(f"Turno creado: {turno.numero} para usuario {user.email}, fecha_cita: {turno.fecha_cita}, prioridad: {turno.prioridad}")
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    # Log errors for debugging
+    logger.error(f"Error al crear turno: {serializer.errors}")
+    return Response({'errors': serializer.errors, 'received_data': data}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_turnos_view(request):
+    try:
+        turnos = Turno.objects.filter(usuario=request.user)
+        serializer = TurnoSerializer(turnos, many=True, context={'request': request})
+        logger.debug(f"Turnos listados para usuario {request.user.email}: {len(turnos)} turnos")
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Error al listar turnos: {str(e)}")
+        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class ProfesionalTurnosList(generics.ListAPIView):
     serializer_class = TurnoSerializer

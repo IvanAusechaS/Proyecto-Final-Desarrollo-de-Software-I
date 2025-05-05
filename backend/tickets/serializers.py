@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Usuario, PuntoAtencion, Turno
+from .models import Usuario, PuntoAtencion, Turno, validate_turno_time
 from django.utils import timezone
 import logging
 
@@ -37,7 +37,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             'email': user.email,
             'nombre': user.nombre,
             'es_profesional': user.es_profesional,
-            'is_admin': user.is_admin,
             'is_active': user.is_active
         }
         return data
@@ -121,7 +120,7 @@ class TurnoSerializer(serializers.ModelSerializer):
     fecha = serializers.DateField(read_only=True)
     fecha_cita = serializers.DateTimeField(
         format='%Y-%m-%dT%H:%M:%S.%fZ',
-        required=False  # Hacer fecha_cita opcional al actualizar
+        required=False
     )
 
     class Meta:
@@ -130,7 +129,7 @@ class TurnoSerializer(serializers.ModelSerializer):
             'id', 'numero', 'usuario', 'punto_atencion', 'punto_atencion_id', 'punto_atencion_id_read',
             'tipo_cita', 'fecha', 'fecha_cita', 'estado', 'prioridad', 'fecha_atencion', 'descripcion'
         ]
-        read_only_fields = ['id', 'numero', 'usuario', 'fecha', 'fecha_atencion']
+        read_only_fields = ['id', 'numero', 'fecha', 'fecha_atencion']
 
     def get_usuario(self, obj):
         usuario = obj.usuario
@@ -152,23 +151,27 @@ class TurnoSerializer(serializers.ModelSerializer):
             'activo': punto.activo
         } if punto else None
 
+    def validate_prioridad(self, value):
+        # Validar que el valor de prioridad esté en las opciones permitidas
+        valid_choices = [choice[0] for choice in Turno.PRIORIDAD_CHOICES]
+        if value not in valid_choices:
+            logger.error(f"Valor de prioridad inválido: {value}. Opciones válidas: {valid_choices}")
+            raise serializers.ValidationError(f"Prioridad debe ser uno de {valid_choices}")
+        logger.debug(f"Prioridad validada: {value}")
+        return value
+
     def validate(self, data):
-        # Solo validar fecha_cita si está presente en los datos
+        logger.debug(f"Datos recibidos para validar: {data}")
         if 'fecha_cita' in data:
             fecha_cita = data['fecha_cita']
+            # Convert to local time for validation, but don't modify the original fecha_cita
             local_time = fecha_cita.astimezone(timezone.get_default_timezone())
             validate_turno_time(local_time)
-        logger.debug(f"Datos validados en TurnoSerializer: {data}")
         return data
 
     def create(self, validated_data):
-        validated_data['usuario'] = self.context['request'].user
         validated_data['fecha'] = timezone.now().date()
-        if 'fecha_cita' in validated_data:
-            fecha_cita = validated_data['fecha_cita']
-            if timezone.is_naive(fecha_cita):
-                validated_data['fecha_cita'] = timezone.make_aware(fecha_cita)
-        logger.debug(f"Creando turno con datos: {validated_data}")
+        logger.debug(f"Creando turno con datos validados: {validated_data}")
         return super().create(validated_data)
 
     def to_representation(self, instance):

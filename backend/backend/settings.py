@@ -3,6 +3,9 @@ from pathlib import Path
 from decouple import config
 from datetime import timedelta
 
+# Debug: Print a variable to confirm it’s being read
+print("DATABASE_NAME:", config('DATABASE_NAME'))
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'tu_clave_secreta_aqui'  # Asegúrate de que esto esté definido
@@ -69,6 +72,7 @@ DATABASES = {
         },
     }
 }
+
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
