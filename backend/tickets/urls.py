@@ -22,12 +22,14 @@ from .views import (
     ProfesionalTurnosList,
     profesional_stats_view,
     CustomTokenObtainPairView,
+    get_turnos_colas,
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
 urlpatterns = [
     path('turnos/list/', list_turnos_view, name='list_turnos'),  
-    path('turnos/create/', create_turno_view, name='create_turno'),  
+    path('turnos/create/', create_turno_view, name='create_turno'), 
+    path('turnos/colas/', get_turnos_colas, name='get_turnos_colas'), 
     path('turnos/<int:pk>/', TurnoDetailView.as_view(), name='turno_detail'),
     path('profesional-turnos/<int:pk>/', TurnoDetailView.as_view(), name='profesional_turno_detail'),
     path('puntos-atencion/', PuntoAtencionListCreate.as_view(), name='punto-atencion-list-create'),

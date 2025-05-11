@@ -97,6 +97,20 @@ class UsuarioSerializer(serializers.ModelSerializer):
         ret = super().to_representation(instance)
         logger.debug(f"Serializer data para usuario {instance.id}: {ret}")
         return ret
+    
+class UpdateProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Usuario
+        fields = ['id', 'nombre', 'email']
+        read_only_fields = ['id']
+
+    def update(self, instance, validated_data):
+        instance.nombre = validated_data.get('nombre', instance.nombre)
+        instance.email = validated_data.get('email', instance.email)
+        if Usuario.objects.filter(email=instance.email).exclude(id=instance.id).exists():
+            raise serializers.ValidationError({'email': 'El correo ya está registrado'})
+        instance.save()
+        return instance
 
 class PuntoAtencionSerializer(serializers.ModelSerializer):
     profesional = UsuarioSerializer(read_only=True)
@@ -110,7 +124,7 @@ class TurnoSerializer(serializers.ModelSerializer):
     usuario = serializers.SerializerMethodField()
     punto_atencion = serializers.SerializerMethodField()
     punto_atencion_id = serializers.PrimaryKeyRelatedField(
-        queryset=PuntoAtencion.objects.all(),
+        queryset=PuntoAtencion.objects.filter(activo=True),
         source='punto_atencion',
         write_only=True
     )
@@ -118,8 +132,9 @@ class TurnoSerializer(serializers.ModelSerializer):
     tipo_cita = serializers.CharField()
     prioridad = serializers.ChoiceField(choices=Turno.PRIORIDAD_CHOICES, default='N')
     fecha = serializers.DateField(read_only=True)
-    fecha_cita = serializers.DateTimeField(
-        format='%Y-%m-%dT%H:%M:%S.%fZ',
+    respuestas_prioridad = serializers.DictField(
+        child=serializers.CharField(),
+        write_only=True,
         required=False
     )
 
@@ -127,7 +142,7 @@ class TurnoSerializer(serializers.ModelSerializer):
         model = Turno
         fields = [
             'id', 'numero', 'usuario', 'punto_atencion', 'punto_atencion_id', 'punto_atencion_id_read',
-            'tipo_cita', 'fecha', 'fecha_cita', 'estado', 'prioridad', 'fecha_atencion', 'descripcion'
+            'tipo_cita', 'fecha', 'estado', 'prioridad', 'fecha_atencion', 'descripcion', 'respuestas_prioridad'
         ]
         read_only_fields = ['id', 'numero', 'fecha', 'fecha_atencion']
 
@@ -148,11 +163,11 @@ class TurnoSerializer(serializers.ModelSerializer):
             'id': punto.id,
             'nombre': punto.nombre,
             'ubicacion': punto.ubicacion,
-            'activo': punto.activo
+            'activo': punto.activo,
+            'servicios': punto.servicios_texto.split('\n') if punto.servicios_texto else []
         } if punto else None
 
     def validate_prioridad(self, value):
-        # Validar que el valor de prioridad esté en las opciones permitidas
         valid_choices = [choice[0] for choice in Turno.PRIORIDAD_CHOICES]
         if value not in valid_choices:
             logger.error(f"Valor de prioridad inválido: {value}. Opciones válidas: {valid_choices}")
@@ -162,15 +177,60 @@ class TurnoSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         logger.debug(f"Datos recibidos para validar: {data}")
-        if 'fecha_cita' in data:
-            fecha_cita = data['fecha_cita']
-            # Convert to local time for validation, but don't modify the original fecha_cita
-            local_time = fecha_cita.astimezone(timezone.get_default_timezone())
-            validate_turno_time(local_time)
+        respuestas_prioridad = data.get('respuestas_prioridad', {})
+        logger.debug(f"Respuestas de prioridad recibidas: {respuestas_prioridad}")
+        pregunta = "¿Cumples con alguna de estas condiciones: eres mayor a 60 años, estás embarazada, tienes bebé en brazos o tienes alguna discapacidad?"
+        respuesta = respuestas_prioridad.get(pregunta, 'no').lower()
+        logger.debug(f"Respuesta normalizada para '{pregunta}': {respuesta}")
+        if respuesta == 'sí':
+            logger.debug("Asignando prioridad 'P' debido a respuesta 'sí'")
+            data['prioridad'] = 'P'
+        else:
+            logger.debug("Asignando prioridad 'N' debido a respuesta 'no'")
+            data['prioridad'] = 'N'
         return data
 
     def create(self, validated_data):
-        validated_data['fecha'] = timezone.now().date()
+        validated_data.pop('respuestas_prioridad', None)
+        fecha = timezone.now().date()
+        validated_data['fecha'] = fecha
+
+        # Obtener el punto de atención y la prioridad
+        punto_atencion = validated_data['punto_atencion']
+        prioridad = validated_data['prioridad']
+
+        # Determinar el prefijo según la prioridad
+        prefix = 'P' if prioridad == 'P' else 'N'
+
+        # Buscar el último número usado para este punto de atención, fecha y prioridad
+        last_turno = Turno.objects.filter(
+            punto_atencion=punto_atencion,
+            fecha=fecha,
+            prioridad=prioridad
+        ).order_by('-numero').first()
+
+        # Calcular el siguiente número
+        if last_turno:
+            last_number = last_turno.numero
+            # Extraer el número (por ejemplo, 'P001' -> '001')
+            number_part = int(last_number[1:])  # Quita el prefijo y convierte a entero
+            next_number = number_part + 1
+        else:
+            next_number = 1
+
+        # Formatear el nuevo número (por ejemplo, 'P001')
+        numero = f"{prefix}{next_number:03d}"  # Formato con 3 dígitos (001, 002, etc.)
+
+        # Verificar si el número ya existe (por seguridad)
+        while Turno.objects.filter(
+            punto_atencion=punto_atencion,
+            fecha=fecha,
+            numero=numero
+        ).exists():
+            next_number += 1
+            numero = f"{prefix}{next_number:03d}"
+
+        validated_data['numero'] = numero
         logger.debug(f"Creando turno con datos validados: {validated_data}")
         return super().create(validated_data)
 
