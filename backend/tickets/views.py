@@ -14,11 +14,12 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer, UsuarioSerializer, PuntoAtencionSerializer, TurnoSerializer
 from .models import Usuario, PuntoAtencion, Turno
 import logging
+from django.utils.timezone import localtime
 from django.utils import timezone
 from django.db.models import Count
 from itertools import zip_longest
 from .utils import get_intercalated_turnos_by_punto
-
+import pytz
 logger = logging.getLogger(__name__)
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -128,8 +129,7 @@ def buscar_usuario_por_cedula(request, cedula):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def current_turnos_view(request):
-    current_time = timezone.now()
-    today = current_time.date()
+    today = localtime(timezone.now()).date()
     turnos_en_progreso = Turno.objects.filter(
         estado='En progreso',
         fecha=today  # Usamos el nuevo campo fecha
@@ -163,7 +163,7 @@ def create_turno_view(request):
 
     # Si no se proporciona fecha_cita, usar la hora actual en UTC
     if 'fecha_cita' not in data:
-        fecha_cita = timezone.now()  # This is already in UTC if USE_TZ=True
+        fecha_cita = localtime(timezone.now()).date()  # This is already in UTC if USE_TZ=True
         data['fecha_cita'] = fecha_cita.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
         logger.debug(f"fecha_cita no proporcionada, establecida a: {data['fecha_cita']}")
 
@@ -213,7 +213,7 @@ class ProfesionalTurnosList(generics.ListAPIView):
             logger.warning(f"Usuario {user.email} no está asignado a un punto de atención")
             return Turno.objects.none()
 
-        today = timezone.now().date()
+        today = localtime(timezone.now()).date()
         logger.debug(f"Fecha actual (today): {today}")
 
         # 🔁 Obtener turnos intercalados desde la función utilitaria
@@ -372,7 +372,7 @@ def punto_profesionales_view(request, pk):
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.utils import timezone
+
 from django.db.models import Count
 from .models import Turno, PuntoAtencion
 
@@ -384,7 +384,7 @@ def profesional_stats_view(request):
         logger.warning(f"Usuario {user.email} no es profesional")
         return Response({'error': 'Acceso denegado'}, status=403)
 
-    today = timezone.now().date()
+    today = localtime(timezone.now()).date()
     punto = PuntoAtencion.objects.filter(profesional=user).first()
     if not punto:
         logger.warning(f"Usuario {user.email} no está asignado a un punto de atención")
@@ -470,9 +470,8 @@ def punto_atencion_services_view(request):
 @permission_classes([IsAuthenticated])
 def pending_turnos_by_service(request):
     puntos = PuntoAtencion.objects.filter(activo=True)
-    hoy = timezone.now().date()
+    hoy =  localtime(timezone.now()).date()
     mañana = hoy + timezone.timedelta(days=1)
-    
     resultados = []
 
     for punto in puntos:

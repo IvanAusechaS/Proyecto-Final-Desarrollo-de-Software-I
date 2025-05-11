@@ -1,5 +1,6 @@
 from django.db import models, connection
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
+from django.utils.timezone import localtime
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 import logging
@@ -128,7 +129,7 @@ class Turno(models.Model):
     def save(self, *args, **kwargs):
         # Generar el número del turno
         if not self.numero:
-            today = timezone.now().date()
+            today = localtime(timezone.now()).date()
             last_turno = Turno.objects.filter(
                 punto_atencion=self.punto_atencion,
                 fecha=today
