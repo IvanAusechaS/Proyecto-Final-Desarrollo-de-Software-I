@@ -153,3 +153,33 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
 }
 
+LOGIN_RATE_LIMIT = '2/m'  # Máximo 5 intentos por minuto
+LOGIN_FAILS_LIMIT = 2     # Se permiten 5 fallos antes de bloquear
+LOGIN_FAILS_TIMEOUT = 60 # Bloqueo durante 5 minutos (300 segundos)
+
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    CSRF_COOKIE_SAMESITE = "Lax"
+    SECURE_HSTS_SECONDS = 31536000  # 1 año
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+
+    SESSION_COOKIE_HTTPONLY = True
+    CSRF_COOKIE_HTTPONLY = True
+
+    X_FRAME_OPTIONS = 'DENY'
+
+    # Seguridad en cabeceras
+    ALLOWED_HOSTS = ['tudominio.com', 'www.tudominio.com']
+else:
+    # Solo en desarrollo
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+
+CSRF_TRUSTED_ORIGINS = ['http://localhost:3000'] 
+
