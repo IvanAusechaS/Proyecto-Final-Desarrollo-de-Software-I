@@ -112,12 +112,11 @@ class Turno(models.Model):
         ('P', 'Prioritario'),
     ]
 
-    numero = models.CharField(max_length=4, unique=False)  # Ej: N001
+    numero = models.CharField(max_length=4, unique=False)  # Ej: N001 o P001
     usuario = models.ForeignKey('Usuario', on_delete=models.CASCADE)
     punto_atencion = models.ForeignKey('PuntoAtencion', on_delete=models.CASCADE)
     tipo_cita = models.CharField(max_length=50)
-    fecha = models.DateField()  # Quitamos el default para setearlo manualmente
-    fecha_cita = models.DateTimeField(validators=[validate_turno_time])  # Añadimos el validador
+    fecha = models.DateField(default=timezone.now)  # Solo fecha, sin hora
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='En espera')
     prioridad = models.CharField(max_length=1, choices=PRIORIDAD_CHOICES, default='N')
     fecha_atencion = models.DateTimeField(null=True, blank=True)
@@ -127,37 +126,23 @@ class Turno(models.Model):
         unique_together = ('punto_atencion', 'numero', 'fecha')  # Unicidad por día y punto
 
     def save(self, *args, **kwargs):
-        # Generar el número del turno
         if not self.numero:
             today = localtime(timezone.now()).date()
             last_turno = Turno.objects.filter(
                 punto_atencion=self.punto_atencion,
-                fecha=today
+                fecha=today,
+                prioridad=self.prioridad
             ).order_by('numero').last()
-            if last_turno and last_turno.numero.startswith('N'):
-                last_num = int(last_turno.numero[1:])  # Extrae el número después de 'N'
+            if last_turno and last_turno.numero.startswith(self.prioridad):
+                last_num = int(last_turno.numero[1:])
                 new_num = last_num + 1
             else:
                 new_num = 1
-            self.numero = f"N{new_num:03d}"  # Ej: N001
-            logger.debug(f"Generado número de turno: {self.numero} para punto_atencion: {self.punto_atencion}, fecha: {today}")
-
-        # Asegurarse de que fecha_cita tenga una zona horaria
-        if self.fecha_cita and timezone.is_naive(self.fecha_cita):
-            self.fecha_cita = timezone.make_aware(self.fecha_cita)
-            logger.debug(f"fecha_cita convertida a aware: {self.fecha_cita}")
-
-        # Setear fecha a partir de fecha_cita
-        if not self.fecha:
-            fecha_cita_local = timezone.localtime(self.fecha_cita)  # Convertir a la zona horaria local (America/Bogota)
-            self.fecha = fecha_cita_local.date()
-            logger.debug(f"Seteando fecha: {self.fecha} a partir de fecha_cita: {self.fecha_cita}")
-
-        # Validar manualmente el horario de fecha_cita
-        validate_turno_time(self.fecha_cita)
+            self.numero = f"{self.prioridad}{new_num:03d}"
+            logger.debug(f"Generado número de turno: {self.numero} para punto_atencion: {self.punto_atencion}, fecha: {today}, prioridad: {self.prioridad}")
 
         super().save(*args, **kwargs)
-        logger.debug(f"Turno guardado: {self.numero}, fecha: {self.fecha}, fecha_cita: {self.fecha_cita}")
+        logger.debug(f"Turno guardado: {self.numero}, fecha: {self.fecha}")
 
     def __str__(self):
         return f"{self.numero} - {self.punto_atencion.nombre}"
