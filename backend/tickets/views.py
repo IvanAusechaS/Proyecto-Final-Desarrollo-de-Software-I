@@ -516,3 +516,33 @@ def punto_atencion_services_view(request):
         for punto in puntos
     }
     return Response(data)
+
+@ratelimit(key='ip', rate=settings.LOGIN_RATE_LIMIT, method='POST', burst=True)
+def login_view(request):
+    """
+    Vista de inicio de sesión con protección contra ataques de fuerza bruta.
+    """
+    if request.method == "POST":
+        username = request.POST.get("username")
+        password = request.POST.get("password")
+
+        # Verificar si el número de intentos fallidos ha alcanzado el límite
+        failed_attempts = cache.get(f"failed_login_{username}", 0)
+
+        if failed_attempts >= settings.LOGIN_FAILS_LIMIT:
+            # Si se han superado los intentos fallidos, bloqueamos el inicio de sesión.
+            return HttpResponse("Tu cuenta ha sido bloqueada temporalmente. Intenta de nuevo más tarde.", status=403)
+
+        user = authenticate(request, username=username, password=password)
+
+        if user is not None:
+            login(request, user)
+            # Resetear los intentos fallidos al éxito
+            cache.delete(f"failed_login_{username}")
+            return redirect('home')  # Redirige a la página de inicio o dashboard
+        else:
+            # Si la autenticación falla, incrementamos el contador de intentos fallidos
+            cache.set(f"failed_login_{username}", failed_attempts + 1, timeout=settings.LOGIN_FAILS_TIMEOUT)
+            return HttpResponse("Credenciales incorrectas. Intenta de nuevo.", status=401)
+
+    return render(request, 'login.html')
