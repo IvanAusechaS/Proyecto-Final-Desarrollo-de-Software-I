@@ -157,6 +157,14 @@ LOGIN_RATE_LIMIT = '2/m'  # Máximo 5 intentos por minuto
 LOGIN_FAILS_LIMIT = 2     # Se permiten 5 fallos antes de bloquear
 LOGIN_FAILS_TIMEOUT = 60 # Bloqueo durante 5 minutos (300 segundos)
 
+# Configuración de caché para almacenar intentos fallidos
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',  # Identificador único de caché
+    }
+}
+
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
@@ -180,4 +188,6 @@ if not DEBUG:
 else:
     # Solo en desarrollo
     ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+
+
 
