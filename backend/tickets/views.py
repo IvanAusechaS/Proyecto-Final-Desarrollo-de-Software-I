@@ -2,7 +2,7 @@ from django.core.mail import send_mail
 from django.conf import settings
 from django.utils.crypto import get_random_string
 from django.contrib.auth.hashers import make_password
-from rest_framework import generics, status
+from rest_framework import generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -510,3 +510,47 @@ def punto_atencion_services_view(request):
         for punto in puntos
     }
     return Response(data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def pending_turnos_by_service(request):
+    puntos = PuntoAtencion.objects.filter(activo=True)
+    resultados = []
+
+    for punto in puntos:
+        turnos_prioritarios = Turno.objects.filter(
+            punto_atencion=punto,
+            estado='En espera',
+            prioridad='P'
+        ).order_by('fecha_cita')
+
+        turnos_normales = Turno.objects.filter(
+            punto_atencion=punto,
+            estado='En espera',
+            prioridad='N'
+        ).order_by('fecha_cita')
+
+        cola_prioritarios = []
+        for turno in turnos_prioritarios:
+            cola_prioritarios.append({
+                'id': turno.id,
+                'codigo_turno': turno.numero,
+                'fecha_creacion': turno.fecha_cita
+            })
+
+        cola_normales = []
+        for turno in turnos_normales:
+            cola_normales.append({
+                'id': turno.id,
+                'codigo_turno': turno.numero,
+                'fecha_creacion': turno.fecha_cita
+            })
+
+        resultados.append({
+            'punto_atencion_id': punto.id,
+            'punto_atencion_nombre': punto.nombre,
+            'cola_prioritarios': cola_prioritarios,
+            'cola_normales': cola_normales
+        })
+
+    return Response(resultados)

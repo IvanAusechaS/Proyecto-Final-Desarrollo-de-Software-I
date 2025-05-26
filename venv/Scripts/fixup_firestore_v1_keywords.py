@@ -1,6 +1,6 @@
-#!C:\Users\ivana\.vscode\Proyecto DSI\venv\Scripts\python.exe
+#!C:\Users\cordo\samue univalle\desarrollo de software 1\proyecto\v2\Proyecto-Final-Desarrollo-de-Software-I\venv\Scripts\python.exe
 # -*- coding: utf-8 -*-
-# Copyright 2024 Google LLC
+# Copyright 2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
