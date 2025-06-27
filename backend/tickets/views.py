@@ -17,9 +17,10 @@ import logging
 from django.utils.timezone import localtime
 from django.utils import timezone
 from django.db.models import Count
-from itertools import zip_longest
-from .utils import get_intercalated_turnos_by_punto
-import pytz
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from django.contrib.auth import get_user_model
+
 logger = logging.getLogger(__name__)
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -562,3 +563,33 @@ def pending_turnos_by_service(request):
         })
 
     return Response(resultados)
+
+User = get_user_model()
+
+@api_view(['PATCH'])
+@permission_classes([IsAdminUser])
+def cambiar_rol_usuario(request, id):
+    try:
+        usuario = User.objects.get(id=id)
+    except User.DoesNotExist:
+        return Response(
+            {"error": "Usuario no encontrado"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    nuevo_rol = request.data.get('rol')
+    roles_validos = ['usuario', 'profesional', 'admin']
+    
+    if not nuevo_rol or nuevo_rol not in roles_validos:
+        return Response(
+            {"error": f"Rol no válido. Debe ser uno de: {', '.join(roles_validos)}"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    usuario.rol = nuevo_rol
+    usuario.save()
+
+    return Response(
+        {"mensaje": f"Rol actualizado a {nuevo_rol} correctamente"},
+        status=status.HTTP_200_OK
+    )

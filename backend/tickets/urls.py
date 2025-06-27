@@ -25,6 +25,7 @@ from .views import (
     get_turnos_colas,
 )
 from rest_framework_simplejwt.views import TokenRefreshView
+from . import views
 
 urlpatterns = [
     path('turnos/list/', list_turnos_view, name='list_turnos'),  
@@ -51,4 +52,5 @@ urlpatterns = [
     path('current-turnos/', current_turnos_view, name='current-turnos'),
     path('puntos-atencion-services/', punto_atencion_services_view, name='punto-atencion-services'),
     path('pending-turnos-by-service/', pending_turnos_by_service, name='pending-turnos-by-service'),
+    path('usuarios/<int:id>/cambiar-rol/', views.cambiar_rol_usuario, name='cambiar-rol-usuario'),
 ]
