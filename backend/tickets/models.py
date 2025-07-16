@@ -63,6 +63,8 @@ class Usuario(AbstractBaseUser):
     is_staff = models.BooleanField(default=False)
     is_admin = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
+    rol = models.CharField(max_length=20, default='usuario')
+    punto_atencion = models.ForeignKey('PuntoAtencion', null=True, blank=True, on_delete=models.SET_NULL)
 
     objects = UsuarioManager()
 

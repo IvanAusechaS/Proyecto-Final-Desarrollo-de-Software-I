@@ -31,14 +31,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data = super().validate(attrs)
         logger.info(f"Login exitoso para {user.nombre}")
         data['user_id'] = user.id  # Añadir user_id directamente
-        data['user'] = {
-            'id': user.id,
-            'cedula': user.cedula or '',
-            'email': user.email,
-            'nombre': user.nombre,
-            'es_profesional': user.es_profesional,
-            'is_active': user.is_active
-        }
+        data['user'] = UsuarioSerializer(user).data
         return data
 
 class UsuarioSerializer(serializers.ModelSerializer):
@@ -46,13 +39,18 @@ class UsuarioSerializer(serializers.ModelSerializer):
     punto_atencion = serializers.SerializerMethodField()
     punto_atencion_id_read = serializers.IntegerField(source='punto_atencion.id', read_only=True)
     password = serializers.CharField(write_only=True)
+    is_admin = serializers.BooleanField(read_only=True)
+    is_staff = serializers.BooleanField(read_only=True)
+    is_superuser = serializers.BooleanField(read_only=True)
+    rol = serializers.CharField(read_only=True)
 
     class Meta:
         model = Usuario
         fields = [
             'id', 'cedula', 'email', 'nombre', 'password', 'es_profesional',
             'punto_atencion', 'punto_atencion_id_read',
-            'usuario'
+            'usuario',
+            'is_admin', 'is_staff', 'is_superuser', 'rol'
         ]
         read_only_fields = ['id']
 
