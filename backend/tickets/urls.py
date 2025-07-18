@@ -2,6 +2,7 @@ from django.urls import path
 from .views import CustomTokenObtainPairView
 from .views import (
     list_turnos_view,
+    usuarios_list_create_view,
     create_turno_view,
     TurnoDetailView,
     PuntoAtencionListCreate,
@@ -47,10 +48,11 @@ urlpatterns = [
     path('reset-password-confirm/', reset_password_confirm_view, name='reset-password-confirm'),
     path('contact/', contact_view, name='contact'),
     path('update-profile/', update_profile_view, name='update-profile'),
+    path('usuarios/', views.usuarios_list_create_view, name='usuarios-list-create'),
     path('puntos-atencion/<int:pk>/profesionales/', punto_profesionales_view, name='punto-profesionales'),
     path('turnos/check-availability/', check_availability_view, name='check-availability'),
     path('current-turnos/', current_turnos_view, name='current-turnos'),
     path('puntos-atencion-services/', punto_atencion_services_view, name='punto-atencion-services'),
     path('pending-turnos-by-service/', pending_turnos_by_service, name='pending-turnos-by-service'),
-    path('usuarios/<int:id>/cambiar-rol/', views.cambiar_rol_usuario, name='cambiar-rol-usuario'),
+    path('usuarios/<int:id>/rol/', views.cambiar_rol_usuario, name='cambiar-rol-usuario'),
 ]
