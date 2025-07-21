@@ -583,8 +583,8 @@ User = get_user_model()
 @permission_classes([IsAdminUser])
 def cambiar_rol_usuario(request, id):
     try:
-        usuario = User.objects.get(id=id)
-    except User.DoesNotExist:
+        usuario = Usuario.objects.get(id=id)
+    except Usuario.DoesNotExist:
         return Response(
             {"error": "Usuario no encontrado"},
             status=status.HTTP_404_NOT_FOUND
@@ -592,14 +592,29 @@ def cambiar_rol_usuario(request, id):
 
     nuevo_rol = request.data.get('rol')
     roles_validos = ['usuario', 'profesional', 'admin']
-    
+
     if not nuevo_rol or nuevo_rol not in roles_validos:
         return Response(
             {"error": f"Rol no válido. Debe ser uno de: {', '.join(roles_validos)}"},
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    # Limpiar todos los roles primero
     usuario.rol = nuevo_rol
+    usuario.es_profesional = False
+    usuario.is_admin = False
+    usuario.is_staff = False
+    usuario.is_superuser = False
+
+    # Asignar el nuevo rol con flags
+    if nuevo_rol == 'admin':
+        usuario.is_admin = True
+        usuario.is_staff = True
+        usuario.is_superuser = True
+    elif nuevo_rol == 'profesional':
+        usuario.es_profesional = True
+    # 'usuario' no necesita más cambios
+
     usuario.save()
 
     return Response(
