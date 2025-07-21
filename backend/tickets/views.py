@@ -21,6 +21,25 @@ from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 
+# --- Endpoints de administración de usuarios ---
+from rest_framework.decorators import api_view, permission_classes
+from .serializers import UsuarioSerializer
+from .models import Usuario
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAdminUser])
+def usuarios_list_create_view(request):
+    if request.method == 'GET':
+        usuarios = Usuario.objects.all()
+        serializer = UsuarioSerializer(usuarios, many=True)
+        return Response(serializer.data)
+    elif request.method == 'POST':
+        serializer = UsuarioSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response(UsuarioSerializer(user).data, status=201)
+        return Response(serializer.errors, status=400)
+
 logger = logging.getLogger(__name__)
 
 class CustomTokenObtainPairView(TokenObtainPairView):
