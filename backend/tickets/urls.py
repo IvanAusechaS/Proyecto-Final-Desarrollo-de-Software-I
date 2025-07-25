@@ -49,6 +49,7 @@ urlpatterns = [
     path('contact/', contact_view, name='contact'),
     path('update-profile/', update_profile_view, name='update-profile'),
     path('usuarios/', views.usuarios_list_create_view, name='usuarios-list-create'),
+    path('usuarios/<int:id>/', views.usuario_delete_view, name='usuario-delete'),
     path('puntos-atencion/<int:pk>/profesionales/', punto_profesionales_view, name='punto-profesionales'),
     path('turnos/check-availability/', check_availability_view, name='check-availability'),
     path('current-turnos/', current_turnos_view, name='current-turnos'),
