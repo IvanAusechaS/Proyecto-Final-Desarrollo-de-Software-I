@@ -25,6 +25,18 @@ from django.contrib.auth import get_user_model
 from rest_framework.decorators import api_view, permission_classes
 from .serializers import UsuarioSerializer
 from .models import Usuario
+from rest_framework import status
+from rest_framework.response import Response
+
+@api_view(['DELETE'])
+@permission_classes([IsAdminUser])
+def usuario_delete_view(request, id):
+    try:
+        usuario = Usuario.objects.get(id=id)
+        usuario.delete()
+        return Response({'message': 'Usuario eliminado correctamente'}, status=status.HTTP_204_NO_CONTENT)
+    except Usuario.DoesNotExist:
+        return Response({'error': 'Usuario no encontrado'}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAdminUser])
