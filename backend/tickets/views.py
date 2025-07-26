@@ -9,11 +9,45 @@ from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer, UsuarioSerializer, PuntoAtencionSerializer, TurnoSerializer, UpdateProfileSerializer
 from .models import Usuario, PuntoAtencion, Turno
 import logging
+
+# --- Eliminar punto de atención ---
+
+# --- Actualizar servicios de punto de atención ---
+@api_view(['PATCH'])
+@permission_classes([IsAdminUser])
+def update_punto_servicios_view(request, pk):
+    from .models import PuntoAtencion
+    servicios = request.data.get('servicios_texto')
+    if servicios is None:
+        return Response({'error': 'Debe enviar el campo servicios_texto'}, status=400)
+    try:
+        punto = PuntoAtencion.objects.get(pk=pk)
+        punto.servicios_texto = servicios
+        punto.save()
+        return Response({'message': 'Servicios actualizados correctamente'}, status=200)
+    except PuntoAtencion.DoesNotExist:
+        return Response({'error': 'Punto de atención no encontrado'}, status=404)
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from rest_framework import status
+
+@api_view(['DELETE'])
+@permission_classes([IsAdminUser])
+def punto_atencion_delete_view(request, pk):
+    try:
+        punto = PuntoAtencion.objects.get(pk=pk)
+        punto.delete()
+        return Response({'message': 'Punto de atención eliminado correctamente'}, status=status.HTTP_204_NO_CONTENT)
+    except PuntoAtencion.DoesNotExist:
+        return Response({'error': 'Punto de atención no encontrado'}, status=status.HTTP_404_NOT_FOUND)
+
 from django.utils.timezone import localtime
 from django.utils import timezone
 from django.db.models import Count
@@ -638,4 +672,26 @@ def cambiar_rol_usuario(request, id):
     return Response(
         {"mensaje": f"Rol actualizado a {nuevo_rol} correctamente"},
         status=status.HTTP_200_OK
-    )
+)
+
+# --- Asignar punto de atención a profesional ---
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def asignar_punto_a_profesional(request):
+    profesional_id = request.data.get('profesional_id')
+    punto_atencion_id = request.data.get('punto_atencion_id')
+    if not profesional_id:
+        return Response({'error': 'Se requiere profesional_id'}, status=400)
+    try:
+        profesional = Usuario.objects.get(id=profesional_id, es_profesional=True)
+    except Usuario.DoesNotExist:
+        return Response({'error': 'Profesional no encontrado'}, status=404)
+    punto = None
+    if punto_atencion_id:
+        try:
+            punto = PuntoAtencion.objects.get(id=punto_atencion_id)
+        except PuntoAtencion.DoesNotExist:
+            return Response({'error': 'Punto de atención no encontrado'}, status=404)
+    profesional.punto_atencion = punto
+    profesional.save()
+    return Response({'message': 'Punto de atención asignado correctamente'}, status=200)
