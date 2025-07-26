@@ -8,7 +8,7 @@ print("DATABASE_NAME:", config('DATABASE_NAME'))
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'tu_clave_secreta_aqui'  # Asegúrate de que esto esté definido
+SECRET_KEY = 'tu_clave_secreta_aqui'  
 
 DEBUG = True
 

@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import CustomTokenObtainPairView
 from .views import (
+    update_punto_servicios_view,
     list_turnos_view,
     usuarios_list_create_view,
     create_turno_view,
@@ -35,6 +36,8 @@ urlpatterns = [
     path('turnos/<int:pk>/', TurnoDetailView.as_view(), name='turno_detail'),
     path('profesional-turnos/<int:pk>/', TurnoDetailView.as_view(), name='profesional_turno_detail'),
     path('puntos-atencion/', PuntoAtencionListCreate.as_view(), name='punto-atencion-list-create'),
+    path('puntos-atencion/<int:pk>/', views.punto_atencion_delete_view, name='punto-atencion-delete'),
+    path('puntos-atencion/<int:pk>/servicios/', update_punto_servicios_view, name='punto-atencion-servicios-update'),
     path('buscar-usuario/<str:cedula>/', buscar_usuario_por_cedula, name='buscar-usuario'),
     path('profesional-turnos/', ProfesionalTurnosList.as_view(), name='profesional-turnos'),
     path('profesional-stats/', profesional_stats_view, name='profesional-stats'),
@@ -56,4 +59,5 @@ urlpatterns = [
     path('puntos-atencion-services/', punto_atencion_services_view, name='punto-atencion-services'),
     path('pending-turnos-by-service/', pending_turnos_by_service, name='pending-turnos-by-service'),
     path('usuarios/<int:id>/rol/', views.cambiar_rol_usuario, name='cambiar-rol-usuario'),
+    path('asignar-punto/', views.asignar_punto_a_profesional, name='asignar-punto'),
 ]
