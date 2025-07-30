@@ -129,7 +129,7 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'sitema.atenciondsi@gmail.com'
-EMAIL_HOST_PASSWORD = 'szad gspw mhit eklj'  # Cambia si usas contraseña de app
+EMAIL_HOST_PASSWORD = 'ilmq sfmv bjnb fkiz'  # Cambia si usas contraseña de app
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 #Estas credenciales van en el .env Tanto credenciales y bases de datos
 #Django enviroment

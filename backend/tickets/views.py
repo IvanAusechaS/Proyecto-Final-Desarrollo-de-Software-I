@@ -1,6 +1,8 @@
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils.crypto import get_random_string
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
 from django.contrib.auth.hashers import make_password
 from rest_framework import generics
 from rest_framework.views import APIView
@@ -13,8 +15,37 @@ from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer, UsuarioSerializer, PuntoAtencionSerializer, TurnoSerializer, UpdateProfileSerializer
 from .models import Usuario, PuntoAtencion, Turno
+from django.utils.timezone import localtime
+from django.contrib.auth import authenticate
+from rest_framework.authtoken.models import Token
+from django.utils import timezone
+from django.db.models import Count
+from django.contrib.auth import get_user_model
+from .serializers import UsuarioSerializer
+from .models import Usuario, PasswordResetCode
+from .models import Turno, PuntoAtencion
 import logging
+import re
 
+logger = logging.getLogger(__name__)
+# --- Login ---
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login_view(request):
+    email = request.data.get('email')
+    password = request.data.get('password')
+    user = authenticate(request, username=email, password=password)
+    if user:
+        logger.debug(f"Usuario autenticado: {email}, es_profesional: {user.es_profesional}, punto_atencion: {user.punto_atencion}")
+        token, created = Token.objects.get_or_create(user=user)
+        serializer = UsuarioSerializer(user)
+        return Response({
+            'access': token.key,
+            'refresh': token.key,  # Nota: Considera implementar un sistema de refresh token separado
+            'user': serializer.data
+        })
+    return Response({'detail': 'Credenciales incorrectas'}, status=400)
 # --- Eliminar punto de atención ---
 
 # --- Actualizar servicios de punto de atención ---
@@ -33,10 +64,6 @@ def update_punto_servicios_view(request, pk):
     except PuntoAtencion.DoesNotExist:
         return Response({'error': 'Punto de atención no encontrado'}, status=404)
 
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAdminUser
-from rest_framework.response import Response
-from rest_framework import status
 
 @api_view(['DELETE'])
 @permission_classes([IsAdminUser])
@@ -48,19 +75,6 @@ def punto_atencion_delete_view(request, pk):
     except PuntoAtencion.DoesNotExist:
         return Response({'error': 'Punto de atención no encontrado'}, status=status.HTTP_404_NOT_FOUND)
 
-from django.utils.timezone import localtime
-from django.utils import timezone
-from django.db.models import Count
-from rest_framework.permissions import IsAdminUser
-from rest_framework.response import Response
-from django.contrib.auth import get_user_model
-
-# --- Endpoints de administración de usuarios ---
-from rest_framework.decorators import api_view, permission_classes
-from .serializers import UsuarioSerializer
-from .models import Usuario
-from rest_framework import status
-from rest_framework.response import Response
 
 @api_view(['DELETE'])
 @permission_classes([IsAdminUser])
@@ -119,8 +133,26 @@ def register_view(request):
                 'error': 'Error al registrar el usuario',
                 'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    logger.error(f"Errores de validación: {serializer.errors}")
-    return Response({'error': 'Datos inválidos', 'details': serializer.errors}, status=400)
+    else:
+        logger.debug(f"Errores de validación completos: {serializer.errors}")
+        # Verificar si el error es por correo duplicado
+        errors = serializer.errors
+        if 'email' in errors:
+            for error in errors['email']:
+                if isinstance(error, dict) and 'Ya existe usuario con este email' in str(error.get('message', '')):
+                    logger.warning(f"Correo duplicado detectado: {request.data['email']}")
+                    return Response({
+                        'error': 'El correo electrónico ya está registrado',
+                        'details': 'Por favor, usa otro correo o inicia sesión.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                elif 'Ya existe usuario con este email' in str(error):
+                    logger.warning(f"Correo duplicado detectado: {request.data['email']}")
+                    return Response({
+                        'error': 'El correo electrónico ya está registrado',
+                        'details': 'Por favor, usa otro correo o inicia sesión.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+        logger.error(f"Errores de validación no manejados: {serializer.errors}")
+        return Response({'error': 'Datos inválidos', 'details': serializer.errors}, status=400)
 
 # Logout
 @api_view(['POST'])
@@ -250,33 +282,33 @@ def list_turnos_view(request):
         logger.error(f"Error al listar turnos: {str(e)}")
         return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+# views.py
 class ProfesionalTurnosList(generics.ListAPIView):
     serializer_class = TurnoSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
-        logger.debug(f"Usuario autenticado: {user.email}, es_profesional: {user.es_profesional}")
-        
+        logger.debug(f"Usuario autenticado: {user.email}, es_profesional: {user.es_profesional}, punto_atencion_id: {user.punto_atencion_id}")
+
         if not user.es_profesional:
             logger.warning(f"Usuario {user.email} no es profesional")
             return Turno.objects.none()
 
-        # Obtener el punto de atención del profesional
-        punto = PuntoAtencion.objects.filter(profesional=user).first()
-        if not punto:
+        # Usar punto_atencion_id del usuario en lugar de profesional
+        if not user.punto_atencion_id:
             logger.warning(f"Usuario {user.email} no está asignado a un punto de atención")
             return Turno.objects.none()
 
         today = localtime(timezone.now()).date()
         logger.debug(f"Fecha actual (today): {today}")
 
-        # Filtrar turnos del punto de atención del profesional para el día actual
+        # Filtrar turnos por punto_atencion_id del usuario
         turnos = Turno.objects.filter(
-    punto_atencion=punto,
-    fecha=today
-    ).order_by('prioridad', 'numero')
-        
+            punto_atencion_id=user.punto_atencion_id,
+            fecha=today
+        ).order_by('prioridad', 'numero')
+
         logger.debug(f"Turnos encontrados: {list(turnos)}")
         return turnos
 
@@ -286,13 +318,9 @@ class ProfesionalTurnosList(generics.ListAPIView):
         ret = serializer.data
         logger.debug(f"Serializer data: {ret}")
         return Response(ret)
-    
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from django.utils import timezone
 from .models import Turno, PuntoAtencion
 
+# views.py
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_turnos_colas(request):
@@ -302,40 +330,44 @@ def get_turnos_colas(request):
         return Response({'error': 'Se requiere un punto_atencion_id válido'}, status=400)
 
     try:
-        punto = PuntoAtencion.objects.get(id=int(punto_atencion_id), activo=True)
+        punto_atencion_id = int(punto_atencion_id)
+        punto = PuntoAtencion.objects.get(id=punto_atencion_id, activo=True)
+        user = request.user
+        # Verificar si el usuario tiene un punto_atencion asignado
+        if user.punto_atencion_id is None:
+            return Response({'error': 'No estás asignado a un punto de atención'}, status=403)
+        if user.punto_atencion_id != punto_atencion_id:
+            return Response({'error': 'No estás autorizado para este punto de atención'}, status=403)
     except PuntoAtencion.DoesNotExist:
         return Response({'error': 'Punto de atención no encontrado o inactivo'}, status=400)
+    except ValueError:
+        return Response({'error': 'punto_atencion_id debe ser un número válido'}, status=400)
 
-    # Obtener turno en progreso
+    # Obtener turnos
     turno_en_progreso = Turno.objects.filter(
-        punto_atencion=punto,
+        punto_atencion_id=punto_atencion_id,
         estado='En progreso',
         fecha=today
     ).first()
 
-    # Obtener turnos en espera (prioritarios y normales)
     turnos_en_espera = Turno.objects.filter(
-        punto_atencion=punto,
+        punto_atencion_id=punto_atencion_id,
         estado='En espera',
         fecha=today
-    ).order_by('prioridad', 'numero')  # Orden inicial: prioritarios primero
+    ).order_by('prioridad', 'numero')
 
-    # Separar en prioritarios y normales
     turnos_prioritarios = [t for t in turnos_en_espera if t.prioridad == 'P']
     turnos_normales = [t for t in turnos_en_espera if t.prioridad == 'N']
 
-    # Construir la lista ordenada con el algoritmo
     turnos_ordenados = []
     if turno_en_progreso:
         turnos_ordenados.append(turno_en_progreso)
 
-    i, j = 0, 0  # Índices para turnos prioritarios y normales
+    i, j = 0, 0
     while i < len(turnos_prioritarios) or j < len(turnos_normales):
-        # Insertar un prioritario si hay disponible
         if i < len(turnos_prioritarios):
             turnos_ordenados.append(turnos_prioritarios[i])
             i += 1
-        # Insertar dos normales si hay disponibles
         if j < len(turnos_normales):
             turnos_ordenados.append(turnos_normales[j])
             j += 1
@@ -343,11 +375,8 @@ def get_turnos_colas(request):
                 turnos_ordenados.append(turnos_normales[j])
                 j += 1
 
-    # Serializar los turnos ordenados
     serializer = TurnoSerializer(turnos_ordenados, many=True)
-    return Response({
-        'turnos': serializer.data
-    }, status=200)
+    return Response({'turnos': serializer.data}, status=200)
 
 class TurnoDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Turno.objects.all()
@@ -359,20 +388,15 @@ class TurnoDetailView(generics.RetrieveUpdateDestroyAPIView):
         if not user.es_profesional:
             logger.warning(f"Usuario {user.email} no es profesional")
             return Turno.objects.none()
-        return Turno.objects.filter(punto_atencion__profesional=user)
+        return Turno.objects.filter(punto_atencion_id=user.punto_atencion_id)
 
     def perform_update(self, serializer):
-        if 'estado' in self.request.data and 'fecha_cita' not in self.request.data:
+        if 'estado' in self.request.data:
             serializer.save()
         else:
-            fecha_cita = serializer.validated_data.get('fecha_cita')
-            if fecha_cita:
-                local_time = fecha_cita.astimezone(timezone.get_default_timezone())
-                validate_turno_time(local_time)
-            serializer.save()
+            raise ValidationError("Solo se permite actualizar el estado del turno.")
 
     def update(self, request, *args, **kwargs):
-        # Habilitar actualizaciones parciales para PUT
         kwargs['partial'] = True
         try:
             logger.debug(f"Datos recibidos para actualizar turno: {request.data}")
@@ -442,6 +466,132 @@ def change_password_view(request):
     user.save()
     return Response({'message': 'Contraseña actualizada correctamente'}, status=status.HTTP_200_OK)
 
+# Solicitar codigo de restablecimiento
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password_view(request):
+    email = request.data.get('email')
+    if not email:
+        return Response({'error': 'Correo electrónico requerido'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = Usuario.objects.get(email=email)
+    except Usuario.DoesNotExist:
+        return Response({'error': 'No existe un usuario con este correo'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Invalidar códigos anteriores
+    PasswordResetCode.objects.filter(user=user, is_used=False).update(is_used=True)
+
+    # Generar nuevo código
+    reset_code = PasswordResetCode.objects.create(
+        user=user,
+        code=PasswordResetCode.generate_code()
+    )
+
+    # Enviar código por correo
+    subject = 'Código para restablecer tu contraseña'
+    message = f"""Hola {user.nombre},
+
+Has solicitado restablecer tu contraseña.
+
+Tu código de verificación es: {reset_code.code}
+
+Este código expira en 15 minutos.
+
+Si no solicitaste este cambio, ignora este correo.
+
+Saludos,
+Equipo de Soporte"""
+
+    from_email = settings.EMAIL_HOST_USER
+    recipient_list = [email]
+
+    try:
+        send_mail(subject, message, from_email, recipient_list, fail_silently=False)
+        logger.info(f"Código de restablecimiento enviado a {email}")
+        return Response({
+            'message': 'Se ha enviado un código de verificación a tu correo electrónico'
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Error al enviar correo: {str(e)}")
+        return Response({
+            'error': 'Error al enviar el correo de restablecimiento'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+# Verificar código de restablecimiento
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_reset_code_view(request):
+    email = request.data.get('email')
+    code = request.data.get('code')
+
+    if not email or not code:
+        return Response({'error': 'Email y código son requeridos'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = Usuario.objects.get(email=email)
+        reset_code = PasswordResetCode.objects.get(
+            user=user,
+            code=code,
+            is_used=False
+        )
+
+        if reset_code.is_expired():
+            return Response({'error': 'El código ha expirado'}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            'message': 'Código verificado correctamente',
+            'valid': True
+        }, status=status.HTTP_200_OK)
+
+    except Usuario.DoesNotExist:
+        return Response({'error': 'Usuario no encontrado'}, status=status.HTTP_400_BAD_REQUEST)
+    except PasswordResetCode.DoesNotExist:
+        return Response({'error': 'Código inválido'}, status=status.HTTP_400_BAD_REQUEST)
+
+# Confirmar restablecimiento de contraseña
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password_confirm_view(request):
+    email = request.data.get('email')
+    code = request.data.get('code')
+    new_password = request.data.get('new_password')
+
+    if not email or not code or not new_password:
+        return Response({
+            'error': 'Email, código y nueva contraseña son requeridos'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = Usuario.objects.get(email=email)
+        reset_code = PasswordResetCode.objects.get(
+            user=user,
+            code=code,
+            is_used=False
+        )
+
+        if reset_code.is_expired():
+            return Response({'error': 'El código ha expirado'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Actualizar contraseña
+        user.set_password(new_password)
+        user.save()
+
+        # Marcar código como usado
+        reset_code.is_used = True
+        reset_code.save()
+
+        logger.info(f"Contraseña restablecida para {email}")
+        return Response({
+            'message': 'Contraseña actualizada correctamente'
+        }, status=status.HTTP_200_OK)
+
+    except Usuario.DoesNotExist:
+        return Response({'error': 'Usuario no encontrado'}, status=status.HTTP_400_BAD_REQUEST)
+    except PasswordResetCode.DoesNotExist:
+        return Response({'error': 'Código inválido'}, status=status.HTTP_400_BAD_REQUEST)
+
+
 # Contacto
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -456,11 +606,23 @@ def contact_view(request):
     subject = f'Nuevo mensaje de contacto de {name}'
     body = f'Nombre: {name}\nCorreo: {email}\nMensaje:\n{message}'
     from_email = settings.EMAIL_HOST_USER
-    recipient_list = ['sistema.atenciondsi@gmail.com']
+    recipient_list = ['sitema.atenciondsi@gmail.com']  
 
     try:
-        send_mail(subject, body, from_email, recipient_list, fail_silently=False)
+        logger.info(f"Intentando enviar email desde {from_email} hacia {recipient_list}")
+        logger.info(f"Asunto: {subject}")
+        
+        result = send_mail(
+            subject, 
+            body, 
+            from_email, 
+            recipient_list, 
+            fail_silently=False
+        )
+        
+        logger.info(f"send_mail devolvió: {result}")
         return Response({'message': 'Mensaje enviado exitosamente'}, status=status.HTTP_200_OK)
+        
     except Exception as e:
         logger.error(f"Error al enviar correo: {str(e)}")
         return Response({'error': 'Error al enviar el mensaje'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -483,13 +645,6 @@ def punto_profesionales_view(request, pk):
     profesionales = Usuario.objects.filter(puntoatencion__id=pk, es_profesional=True)
     serializer = UsuarioSerializer(profesionales, many=True)
     return Response(serializer.data)
-
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-
-from django.db.models import Count
-from .models import Turno, PuntoAtencion
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -695,3 +850,4 @@ def asignar_punto_a_profesional(request):
     profesional.punto_atencion = punto
     profesional.save()
     return Response({'message': 'Punto de atención asignado correctamente'}, status=200)
+

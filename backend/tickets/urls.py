@@ -25,6 +25,9 @@ from .views import (
     profesional_stats_view,
     CustomTokenObtainPairView,
     get_turnos_colas,
+    reset_password_view,
+    reset_password_confirm_view,
+    verify_reset_code_view,
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
@@ -60,4 +63,7 @@ urlpatterns = [
     path('pending-turnos-by-service/', pending_turnos_by_service, name='pending-turnos-by-service'),
     path('usuarios/<int:id>/rol/', views.cambiar_rol_usuario, name='cambiar-rol-usuario'),
     path('asignar-punto/', views.asignar_punto_a_profesional, name='asignar-punto'),
-]
+    path('reset-password/', views.reset_password_view, name='reset_password'),
+    path('reset-password-confirm/', views.reset_password_confirm_view, name='reset_password_confirm'),
+    path('verify-reset-code/', views.verify_reset_code_view, name='verify_reset_code'),
+    ]

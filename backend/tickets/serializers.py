@@ -34,10 +34,10 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['user'] = UsuarioSerializer(user).data
         return data
 
+# serializers.py
 class UsuarioSerializer(serializers.ModelSerializer):
-    usuario = serializers.PrimaryKeyRelatedField(queryset=Usuario.objects.all(), required=False)  # Make optional
     punto_atencion = serializers.SerializerMethodField()
-    punto_atencion_id_read = serializers.IntegerField(source='punto_atencion.id', read_only=True)
+    punto_atencion_id_read = serializers.IntegerField(source='punto_atencion.id', read_only=True, default=None)
     password = serializers.CharField(write_only=True)
     is_admin = serializers.BooleanField(read_only=True)
     is_staff = serializers.BooleanField(read_only=True)
@@ -49,7 +49,6 @@ class UsuarioSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'cedula', 'email', 'nombre', 'password', 'es_profesional',
             'punto_atencion', 'punto_atencion_id_read',
-            'usuario',
             'is_admin', 'is_staff', 'is_superuser', 'rol'
         ]
         read_only_fields = ['id']
@@ -236,3 +235,4 @@ class TurnoSerializer(serializers.ModelSerializer):
         ret = super().to_representation(instance)
         logger.debug(f"Serializer data para turno {instance.id}: {ret}")
         return ret
+    

@@ -3,7 +3,10 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils.timezone import localtime
 from django.utils import timezone
 from django.core.exceptions import ValidationError
+from datetime import timedelta
 import logging
+import random
+import string
 
 logger = logging.getLogger(__name__)
 
@@ -148,3 +151,25 @@ class Turno(models.Model):
 
     def __str__(self):
         return f"{self.numero} - {self.punto_atencion.nombre}"
+    
+class PasswordResetCode(models.Model):
+    user = models.ForeignKey('Usuario', on_delete=models.CASCADE)
+    code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+
+    def save(self, *args, **kwargs):
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timedelta(minutes=15)  # Expira en 15 minutos
+        super().save(*args, **kwargs)
+
+    def is_expired(self):
+        return timezone.now() > self.expires_at
+
+    @classmethod
+    def generate_code(cls):
+        return ''.join(random.choices(string.digits, k=6))
+
+    def __str__(self):
+        return f"Reset code for {self.user.email}"
