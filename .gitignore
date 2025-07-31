@@ -38,3 +38,5 @@ node_modules/.cache/
 # General
 *.log
 .DS_Store
+
+.env

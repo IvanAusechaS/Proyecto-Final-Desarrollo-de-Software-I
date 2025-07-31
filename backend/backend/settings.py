@@ -6,13 +6,14 @@ from datetime import timedelta
 # Debug: Print a variable to confirm it’s being read
 print("DATABASE_NAME:", config('DATABASE_NAME'))
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent 
 
-SECRET_KEY = 'tu_clave_secreta_aqui'  
+DEBUG = config('DEBUG', default=False, cast=bool)
 
-DEBUG = True
-
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+if not DEBUG:
+    ALLOWED_HOSTS = ['*']  # Para Render, ajusta con tu dominio después
+else:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -115,11 +116,14 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Configuración de CORS
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
+    "http://localhost:3000",  # Para desarrollo
+    "https://ivanausechas-frontend.vercel.app",  # Ajusta con tu dominio exacto de Vercel
 ]
 CORS_ALLOW_CREDENTIALS = True
+
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 AUTH_USER_MODEL = 'tickets.Usuario'
 
