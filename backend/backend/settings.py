@@ -113,7 +113,7 @@ LOGGING = {
 }
 
 STATIC_URL = 'static/'
-
+SECRET_KEY = config('SECRET_KEY')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOWED_ORIGINS = [
