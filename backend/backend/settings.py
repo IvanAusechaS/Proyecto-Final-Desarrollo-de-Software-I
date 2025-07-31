@@ -10,7 +10,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 DEBUG = config('DEBUG', default=False, cast=bool)
 ALLOWED_HOSTS = [
-    'proyecto-final-desarrollo-de-software-i-cg29.onrender.com',
+    "https://proyecto-final-desarrollo-de-software-i-cg29.onrender.com",
     "localhost",
     "127.0.0.1",
 ]
