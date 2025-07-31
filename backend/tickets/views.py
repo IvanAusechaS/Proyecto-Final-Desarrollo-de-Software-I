@@ -4,6 +4,7 @@ from django.utils.crypto import get_random_string
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.contrib.auth.hashers import make_password
+from django.http import JsonResponse
 from rest_framework import generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -320,12 +321,12 @@ class ProfesionalTurnosList(generics.ListAPIView):
         return Response(ret)
 from .models import Turno, PuntoAtencion
 
-# views.py
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_turnos_colas(request):
     today = timezone.now().date()
     punto_atencion_id = request.query_params.get('punto_atencion_id')
+    fecha = request.query_params.get('fecha', today)  # Usar fecha proporcionada o la actual
     if not punto_atencion_id or not punto_atencion_id.isdigit():
         return Response({'error': 'Se requiere un punto_atencion_id válido'}, status=400)
 
@@ -333,29 +334,36 @@ def get_turnos_colas(request):
         punto_atencion_id = int(punto_atencion_id)
         punto = PuntoAtencion.objects.get(id=punto_atencion_id, activo=True)
         user = request.user
-        # Verificar si el usuario tiene un punto_atencion asignado
-        if user.punto_atencion_id is None:
-            return Response({'error': 'No estás asignado a un punto de atención'}, status=403)
-        if user.punto_atencion_id != punto_atencion_id:
-            return Response({'error': 'No estás autorizado para este punto de atención'}, status=403)
+        logger.debug(f"Usuario: {user.email}, es_profesional: {user.es_profesional}, punto_atencion_id: {user.punto_atencion_id}")
+
+        if user.es_profesional:
+            if user.punto_atencion_id is None:
+                logger.warning(f"Profesional {user.email} no tiene punto_atencion_id asignado")
+                return Response({'error': 'No estás asignado a un punto de atención'}, status=403)
+            if user.punto_atencion_id != punto_atencion_id:
+                logger.warning(f"Profesional {user.email} intenta acceder a punto_atencion_id {punto_atencion_id} pero está asignado a {user.punto_atencion_id}")
+                return Response({'error': 'No estás autorizado para este punto de atención'}, status=403)
+        else:
+            if not Turno.objects.filter(usuario=user, punto_atencion_id=punto_atencion_id, fecha=fecha).exists():
+                logger.warning(f"Usuario {user.email} no tiene turnos en punto_atencion_id {punto_atencion_id} para fecha {fecha}")
+                return Response({'error': 'No tienes turnos en este punto de atención para la fecha indicada'}, status=403)
+
     except PuntoAtencion.DoesNotExist:
+        logger.error(f"Punto de atención {punto_atencion_id} no encontrado o inactivo")
         return Response({'error': 'Punto de atención no encontrado o inactivo'}, status=400)
     except ValueError:
+        logger.error(f"punto_atencion_id {punto_atencion_id} no es un número válido")
         return Response({'error': 'punto_atencion_id debe ser un número válido'}, status=400)
 
-    # Obtener turnos
-    turno_en_progreso = Turno.objects.filter(
+    # Obtener TODOS los turnos para la fecha especificada (sin filtrar por estado)
+    turnos = Turno.objects.filter(
         punto_atencion_id=punto_atencion_id,
-        estado='En progreso',
-        fecha=today
-    ).first()
+        fecha=fecha
+    ).select_related('usuario', 'punto_atencion').order_by('numero')
 
-    turnos_en_espera = Turno.objects.filter(
-        punto_atencion_id=punto_atencion_id,
-        estado='En espera',
-        fecha=today
-    ).order_by('prioridad', 'numero')
-
+    # Reordenar solo los turnos en espera para mantener la lógica existente
+    turno_en_progreso = turnos.filter(estado='En progreso').first()
+    turnos_en_espera = turnos.filter(estado='En espera').order_by('prioridad', 'numero')
     turnos_prioritarios = [t for t in turnos_en_espera if t.prioridad == 'P']
     turnos_normales = [t for t in turnos_en_espera if t.prioridad == 'N']
 
@@ -375,7 +383,12 @@ def get_turnos_colas(request):
                 turnos_ordenados.append(turnos_normales[j])
                 j += 1
 
+    # Añadir los turnos no en espera (Atendido, Cancelado, etc.) al final
+    turnos_restantes = turnos.exclude(id__in=[t.id for t in turnos_ordenados])
+    turnos_ordenados.extend(turnos_restantes)
+
     serializer = TurnoSerializer(turnos_ordenados, many=True)
+    logger.debug(f"Turnos devueltos para punto_atencion_id {punto_atencion_id} y fecha {fecha}: {serializer.data}")
     return Response({'turnos': serializer.data}, status=200)
 
 class TurnoDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -388,7 +401,17 @@ class TurnoDetailView(generics.RetrieveUpdateDestroyAPIView):
         if not user.es_profesional:
             logger.warning(f"Usuario {user.email} no es profesional")
             return Turno.objects.none()
-        return Turno.objects.filter(punto_atencion_id=user.punto_atencion_id)
+        punto_atencion_id = getattr(user, 'punto_atencion_id', None)
+        if not punto_atencion_id:
+            logger.warning(f"Usuario {user.email} no tiene punto_atencion_id asignado")
+            return Turno.objects.none()
+        logger.debug(f"Filtrando turnos para punto_atencion_id: {punto_atencion_id}")
+        return Turno.objects.filter(punto_atencion_id=punto_atencion_id)
+
+    def get_object(self):
+        queryset = self.get_queryset()
+        obj = generics.get_object_or_404(queryset, id=self.kwargs['pk'])
+        return obj
 
     def perform_update(self, serializer):
         if 'estado' in self.request.data:
@@ -399,11 +422,32 @@ class TurnoDetailView(generics.RetrieveUpdateDestroyAPIView):
     def update(self, request, *args, **kwargs):
         kwargs['partial'] = True
         try:
-            logger.debug(f"Datos recibidos para actualizar turno: {request.data}")
-            return super().update(request, *args, **kwargs)
+            logger.debug(f"Datos recibidos para actualizar turno {kwargs.get('pk')}: {request.data}")
+            response = super().update(request, *args, **kwargs)
+            logger.debug(f"Turno {kwargs.get('pk')} actualizado exitosamente: {response.data}")
+            return response
         except ValidationError as e:
-            logger.error(f"Error al actualizar turno: {str(e)}")
+            logger.error(f"Error al actualizar turno {kwargs.get('pk')}: {str(e)}")
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except ObjectDoesNotExist:
+            logger.error(f"Turno {kwargs.get('pk')} no encontrado")
+            return Response({'detail': 'Turno no encontrado'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error inesperado al actualizar turno {kwargs.get('pk')}: {str(e)}")
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def destroy(self, request, *args, **kwargs):
+        try:
+            logger.debug(f"Eliminando turno {kwargs.get('pk')}")
+            response = super().destroy(request, *args, **kwargs)
+            logger.debug(f"Turno {kwargs.get('pk')} eliminado exitosamente")
+            return response
+        except ObjectDoesNotExist:
+            logger.error(f"Turno {kwargs.get('pk')} no encontrado para eliminar")
+            return Response({'detail': 'Turno no encontrado'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error inesperado al eliminar turno {kwargs.get('pk')}: {str(e)}")
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # Listar y crear puntos de atención
 class PuntoAtencionListCreate(generics.ListCreateAPIView):
@@ -851,3 +895,29 @@ def asignar_punto_a_profesional(request):
     profesional.save()
     return Response({'message': 'Punto de atención asignado correctamente'}, status=200)
 
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_turno(request, turno_id):
+    try:
+        turno = Turno.objects.get(id=turno_id)
+        serializer = TurnoSerializer(turno, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Turno.DoesNotExist:
+        return Response({'error': 'Turno no encontrado'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+@api_view(['GET'])
+def get_all_turnos(request, punto_atencion_id, fecha):
+    try:
+        turnos = Turno.objects.filter(
+            punto_atencion_id=punto_atencion_id,
+            fecha=fecha
+        ).select_related('usuario', 'punto_atencion')
+        serializer = TurnoSerializer(turnos, many=True)
+        return JsonResponse(serializer.data, safe=False, status=200)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
