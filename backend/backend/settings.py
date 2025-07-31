@@ -11,7 +11,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DEBUG = config('DEBUG', default=False, cast=bool)
 
 if not DEBUG:
-    ALLOWED_HOSTS = ['proyecto-final-desarrollo-de-software-i-cg29.onrender.com', 'www.proyecto-final-desarrollo-de-software-i-cg29.onrender.com']  # Para Render, ajusta con tu dominio después
+    ALLOWED_HOSTS = [
+    "proyecto-final-desarrollo-de-software-i-cg29.onrender.com",
+    "localhost",
+    "127.0.0.1",
+]
 else:
     ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
