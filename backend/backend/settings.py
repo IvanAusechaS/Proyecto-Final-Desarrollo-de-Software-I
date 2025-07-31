@@ -11,7 +11,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DEBUG = config('DEBUG', default=False, cast=bool)
 
 if not DEBUG:
-    ALLOWED_HOSTS = ['*']  # Para Render, ajusta con tu dominio después
+    ALLOWED_HOSTS = ['tudominio.com', 'www.tudominio.com']  # Para Render, ajusta con tu dominio después
 else:
     ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
