@@ -9,11 +9,10 @@ print("DATABASE_NAME:", config('DATABASE_NAME'))
 BASE_DIR = Path(__file__).resolve().parent.parent 
 
 DEBUG = config('DEBUG', default=False, cast=bool)
-ALLOWED_HOSTS = [
-    "localhost",
-    "127.0.0.1",
-    "proyecto-final-desarrollo-de-software-i-cg29.onrender.com"
-]
+if not DEBUG:
+    ALLOWED_HOSTS = ['*']  # Para Render, ajusta con tu dominio después
+else:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 
 INSTALLED_APPS = [
