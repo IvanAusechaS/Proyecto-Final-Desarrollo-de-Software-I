@@ -1,4 +1,5 @@
 # backend/settings.py
+import os
 from pathlib import Path
 from decouple import config
 from datetime import timedelta
@@ -10,7 +11,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 DEBUG = config('DEBUG', default=False, cast=bool)
 if not DEBUG:
-    ALLOWED_HOSTS = ['*']  # Para Render, ajusta con tu dominio después
+    ALLOWED_HOSTS = []  # Para Render, ajusta con tu dominio después
+    RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 else:
     ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
