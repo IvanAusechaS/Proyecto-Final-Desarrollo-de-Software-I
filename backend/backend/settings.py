@@ -192,7 +192,9 @@ if not DEBUG:
     X_FRAME_OPTIONS = 'DENY'
 
     # Seguridad en cabeceras
-    ALLOWED_HOSTS = ['tudominio.com', 'www.tudominio.com']
+    ALLOWED_HOSTS = ['proyecto-final-desarrollo-de-software-i-cg29.onrender.com',
+    '127.0.0.1',
+    'localhost',]
 else:
     # Solo en desarrollo
     ALLOWED_HOSTS = ['localhost', '127.0.0.1']
